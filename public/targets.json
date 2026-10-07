@@ -1,0 +1,18 @@
+{
+  "households": 6250,
+  "individuals": 35000,
+  "areas": {
+    "Al-Shati'": {
+      "individuals": 10126,
+      "hhs": 2083.3
+    },
+    "Al-Naser": {
+      "individuals": 12437,
+      "hhs": 2080.5
+    },
+    "Al-Tahrir": {
+      "individuals": 11655,
+      "hhs": 1325
+    }
+  }
+}
