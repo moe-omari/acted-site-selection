@@ -2,8 +2,9 @@ import * as XLSX from 'xlsx'
 import catalog from '../data/catalog.json'
 import neighborhoods from '../data/neighborhoods.json'
 import registers from '../data/registers.json'
-import { partnerSitesByOthers } from './partners'
+import { listedAsPartner } from './partners'
 import { pointInRing } from './geo'
+import { listedAsManaged } from './managed-layer'
 import { extentCenter, verificationCandidates } from './sites'
 
 function normalizeId(id) {
@@ -160,7 +161,7 @@ export function areaPopulation(verification, act, areaRing, dots) {
   if (areaRing && dots) {
     for (const site of catalog.candidates) {
       const key = normalizeId(site.id)
-      if (!key || seen.has(key)) continue
+      if (!key || seen.has(key) || listedAsManaged([site.id]) || listedAsPartner([site.id])) continue
       if (!dotInside([site.id], areaRing, dots)) continue
       hhs += amount(site.hhs)
       individuals += amount(site.individuals)
@@ -172,12 +173,20 @@ export function areaPopulation(verification, act, areaRing, dots) {
 
 export function verificationRows(areaRing, dots) {
   const { rows, siteId, formSiteId } = registers.verification
-  return rows.filter((row) => dotInside([row[siteId], row[formSiteId]], areaRing, dots))
+  return rows.filter((row) => {
+    const ids = [row[siteId], row[formSiteId]]
+    if (listedAsManaged(ids) || listedAsPartner(ids)) return false
+    return dotInside(ids, areaRing, dots)
+  })
 }
 
 export function actRows(areaRing, dots) {
   const sheet = registers.act
-  return sheet.rows.filter((row) => dotInside([row[sheet.siteId], row[sheet.newSiteId]], areaRing, dots))
+  return sheet.rows.filter((row) => {
+    const ids = [row[sheet.siteId], row[sheet.newSiteId]]
+    if (listedAsManaged(ids) || listedAsPartner(ids)) return false
+    return dotInside(ids, areaRing, dots)
+  })
 }
 
 export function areaContents(areaRing, dots) {
@@ -187,23 +196,8 @@ export function areaContents(areaRing, dots) {
   }
 }
 
-export function partnerSitesIn(areaRing, dots) {
-  if (!areaRing || !dots) return []
-  return partnerSitesByOthers.filter((site) => dotInside([site.key], areaRing, dots))
-}
-
-function partnerBreakdown(sites) {
-  const counts = new Map()
-  for (const site of sites) {
-    const name = site.partner || 'Unknown'
-    counts.set(name, (counts.get(name) || 0) + 1)
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-}
-
-export function downloadAreaWorkbook(name, areaRing, dots, partnerDots) {
+export function downloadAreaWorkbook(name, areaRing, dots) {
   const contents = areaContents(areaRing, dots)
-  const partners = partnerSitesIn(areaRing, partnerDots)
   const population = areaPopulation(contents.verification, contents.act, areaRing, dots)
   const verification = registers.verification
   const act = registers.act
@@ -215,20 +209,6 @@ export function downloadAreaWorkbook(name, areaRing, dots, partnerDots) {
     const ids = [row[act.siteId], row[act.newSiteId]]
     return [neighborhoodField(ids, dots), ...dotCoordinate(ids, dots), ...row]
   })
-  const partnerRows = partners.map((site) => {
-    const [lat, lon] = dotCoordinate([site.key], partnerDots)
-    return [
-      site.id,
-      site.name,
-      site.partner,
-      site.governorate,
-      site.neighborhood,
-      site.households ?? '',
-      site.individuals ?? '',
-      lat,
-      lon,
-    ]
-  })
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(
     book,
@@ -238,10 +218,6 @@ export function downloadAreaWorkbook(name, areaRing, dots, partnerDots) {
       ['ACT sites', contents.act.length],
       ['Households', population.hhs],
       ['Individuals', population.individuals],
-      ['Managed sites by partners', partners.length],
-      [],
-      ['Partner', 'Managed sites'],
-      ...partnerBreakdown(partners),
     ]),
     'Area',
   )
@@ -254,11 +230,6 @@ export function downloadAreaWorkbook(name, areaRing, dots, partnerDots) {
     book,
     XLSX.utils.aoa_to_sheet([['Map neighborhood', 'Dot latitude', 'Dot longitude', ...act.headers], ...actRows]),
     'ACT sites',
-  )
-  XLSX.utils.book_append_sheet(
-    book,
-    XLSX.utils.aoa_to_sheet([['Site ID', 'Site name', 'Partner', 'Governorate', 'Neighborhood', 'Households', 'Individuals', 'Latitude', 'Longitude'], ...partnerRows]),
-    'Managed by partners',
   )
   const safe = String(name || 'area').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'area'
   XLSX.writeFile(book, `${safe}.xlsx`)
@@ -291,7 +262,7 @@ function insideAreas(ids, definedAreas, dots) {
 
 function areaFields(ids, definedAreas, point, assessedById, placeName, dots) {
   const keys = [...new Set(ids.map(normalizeId).filter(Boolean))]
-  const inside = insideAreas(keys, definedAreas, dots)
+  const inside = listedAsManaged(keys) || listedAsPartner(keys) ? [] : insideAreas(keys, definedAreas, dots)
   if (inside.length) {
     const targeted = [...new Set(inside.map((area) => area.parent).filter(Boolean))]
     const names = inside.map((area) => area.name).filter(Boolean)

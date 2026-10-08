@@ -1,15 +1,17 @@
 """Build src/data/partner-sites.json from the partner managed-sites workbook."""
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
 from openpyxl import load_workbook
 
-SOURCE = Path(r'C:\Users\PC\Desktop\managed sites by partners.xlsx')
+SOURCE = Path(r'D:\downloads\sites managed by partners 2.xlsx')
 TARGET = Path('src/data/partner-sites.json')
 
-HOUSEHOLDS = 'Please review the below information / Estimated number of households currently accommodated in the site (total population divided by 5 is ${est_hh_existing})'
-INDIVIDUALS = 'Estimated number of individuals currently accommodated in the site'
+HOUSEHOLDS = 'Site demographics/Please review the below information/Estimated number of households currently accommodated in the site (total population divided by 5 is ${est_hh_existing})'
+INDIVIDUALS = 'Site demographics/Estimated number of individuals currently accommodated in the site'
+POINT = re.compile(r'POINT\s*\(\s*([+-]?\d+(?:\.\d+)?)\s*[, ]\s*([+-]?\d+(?:\.\d+)?)\s*\)', re.I)
 
 
 def number(value):
@@ -38,6 +40,13 @@ def coordinate(value):
     return amount
 
 
+def point(value):
+    match = POINT.search(text(value))
+    if not match:
+        return None, None
+    return coordinate(match.group(2)), coordinate(match.group(1))
+
+
 def text(value):
     return str(value or '').strip()
 
@@ -52,8 +61,7 @@ def main():
     sites = []
     for row in rows:
         site_id = text(row[index['Site ID']])
-        lat = coordinate(row[index['Latitude']])
-        lon = coordinate(row[index['Longitude']])
+        lat, lon = point(row[index['Site Information/Location']])
         if not site_id or lat is None or lon is None:
             continue
         seen[site_id] += 1
@@ -62,12 +70,12 @@ def main():
             'key': key,
             'id': site_id,
             'name': text(row[index['Site Name']]),
-            'nameAr': text(row[index['Site Name (Arabic)']]),
-            'partner': text(row[index['Implementing Partner']]),
-            'governorate': text(row[index['First Level Region Name']]),
-            'neighborhood': text(row[index['Second Level Region Name']]),
-            'siteType': text(row[index['Site Type']]),
-            'status': text(row[index['Site Status']]),
+            'nameAr': text(row[index['Site Information/Site Name (Arabic)']]),
+            'partner': text(row[index['Site Information/Implementing Partner']]),
+            'governorate': text(row[index['Region Information/First Level Region Name']]),
+            'neighborhood': text(row[index['Region Information/Second Level Region Name']]),
+            'siteType': text(row[index['Site Information/Site Type']]),
+            'status': text(row[index['Site Information/Site Status']]),
             'households': number(row[index[HOUSEHOLDS]]),
             'individuals': number(row[index[INDIVIDUALS]]),
             'lat': lat,

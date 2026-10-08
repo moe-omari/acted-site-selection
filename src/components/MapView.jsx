@@ -17,7 +17,7 @@ import blocks from '../data/blocks.json'
 import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
 import neighborhoods from '../data/neighborhoods.json'
-import { partnerSitesByOthers as partnerSites } from '../lib/partners'
+import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
 import { siteForExtent, actRecord, actMapSites, barePolygonDots, unlinkedExtents } from '../lib/sites'
 import { useAppState } from '../state'
 import { haversineKm } from '../lib/geo'
@@ -165,7 +165,9 @@ function AreaEditor({ area, points, summary, onChange }) {
       fillOpacity: 0.18,
       areaEdit: true,
     }).addTo(map)
-    polygon.bindTooltip(`<strong>${escapeHtml(area.name)}</strong><span>${escapeHtml(summary)}</span>`, {
+    polygon.bindTooltip(
+      `<strong>${area.featured ? '<span class="area-check" aria-label="Selected">✓</span>' : ''}${escapeHtml(area.name)}</strong><span>${escapeHtml(summary)}</span>`,
+      {
       permanent: true,
       direction: 'center',
       className: 'area-label',
@@ -354,6 +356,11 @@ export default function MapView() {
       if (renderedCandidateIds.has(site.id) && overlaps.managedIds.has(site.id)) managedHidden.add(site.id)
     }
   }
+
+  const sitesAlreadyOnMap = new Set()
+  for (const site of catalog.candidates) sitesAlreadyOnMap.add(String(site.id).toUpperCase())
+  for (const site of catalog.managed) sitesAlreadyOnMap.add(String(site.id).toUpperCase())
+  for (const site of actMapSites()) sitesAlreadyOnMap.add(String(site.id).toUpperCase())
 
   const fitPoints = []
   if (activeArea) {
@@ -557,7 +564,10 @@ export default function MapView() {
                 },
               }}
             >
-              <strong>{area.name}</strong>
+              <strong>
+                {area.featured ? <span className="area-check" aria-label="Selected">✓</span> : null}
+                {area.name}
+              </strong>
               <span>{formatCount(areaCounts[area.id]?.hhs ?? 0)} HH · {formatNumber(areaCounts[area.id]?.individuals ?? 0)}</span>
             </Tooltip>
           </Polygon>
@@ -642,7 +652,7 @@ export default function MapView() {
           />
         ) : null}
 
-        {layers.partners && partnerSites.map((site) => {
+        {layers.partners && partnerSites.filter((site) => !sitesAlreadyOnMap.has(String(site.key).toUpperCase())).map((site) => {
           const here = placed('partner', site.key, site.lat, site.lon)
           return (
             <SiteDot
@@ -672,6 +682,7 @@ export default function MapView() {
           })
           .map((site) => {
             const here = placed('managed', site.id, site.lat, site.lon)
+            const partner = partnerFor(site.id)?.partner
             return (
               <SiteDot
                 key={site.id}
@@ -682,7 +693,7 @@ export default function MapView() {
                 color="#0f7b6c"
                 filled
                 active={isActive('managed', site.id, focusKey, hoverKey)}
-                title={site.name}
+                title={partner ? `${site.name} · ${partner}` : site.name}
                 setFocus={setFocus}
                 moveSite={moveSite}
               />
@@ -692,6 +703,7 @@ export default function MapView() {
         {[...visibleCandidates].sort((a, b) => Number(isActive('candidate', a.id, focusKey, hoverKey)) - Number(isActive('candidate', b.id, focusKey, hoverKey))).map((site) => {
           const here = placed('candidate', site.id, site.lat, site.lon)
           const color = areaByName[site.area]?.color ?? '#337ea9'
+          const partner = partnerFor(site.id)?.partner
           return (
             <SiteDot
               key={site.id}
@@ -702,7 +714,7 @@ export default function MapView() {
               color={color}
               filled={plan.has(site.id)}
               active={isActive('candidate', site.id, focusKey, hoverKey)}
-              title={site.name}
+              title={partner ? `${site.name} · ${partner}` : site.name}
               setFocus={setFocus}
               moveSite={moveSite}
             />
@@ -717,6 +729,7 @@ export default function MapView() {
           })
           .map((site) => {
             const here = placed('act', site.id, site.lat, site.lon)
+            const partner = partnerFor(site.id)?.partner
             return (
               <SiteDot
                 key={`act-${site.id}`}
@@ -727,7 +740,7 @@ export default function MapView() {
                 color="#3949ab"
                 filled={plan.has(site.id)}
                 active={isActive('act', site.id, focusKey, hoverKey)}
-                title={site.name}
+                title={partner ? `${site.name} · ${partner}` : site.name}
                 setFocus={setFocus}
                 moveSite={moveSite}
               />

@@ -628,7 +628,18 @@ button { cursor: pointer; }
 .area-label strong,
 .area-label span { display: block; }
 
-.area-label strong { font-weight: 600; }
+.area-label strong {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.area-check {
+  font-weight: 700;
+  line-height: 1;
+}
 
 .area-label span {
   font-weight: 500;

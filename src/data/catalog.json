@@ -1789,8 +1789,8 @@
       "nameAr": "موقع حرم جامعة الأقصى",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.5222,
-      "lon": 34.450511
+      "lat": 31.35729,
+      "lon": 34.27543
     },
     {
       "id": "KYS0925",
@@ -1798,8 +1798,8 @@
       "nameAr": "الهلال الأحمر المصري (الأقصى 2)",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.524785,
-      "lon": 34.454772
+      "lat": 31.35614,
+      "lon": 34.27218
     },
     {
       "id": "KYS1414",
@@ -1807,8 +1807,8 @@
       "nameAr": "موقع الأمل بالعودة",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.51903,
-      "lon": 34.4508
+      "lat": 31.35047,
+      "lon": 34.27408
     },
     {
       "id": "KYS1440",
@@ -1816,8 +1816,8 @@
       "nameAr": "موقع ثمار الخير",
       "place": "South of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.522989,
-      "lon": 34.457863
+      "lat": 31.34936,
+      "lon": 34.2699517
     },
     {
       "id": "KYS1792",
@@ -1825,8 +1825,8 @@
       "nameAr": "مخيم بيتنا",
       "place": "South of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.520329,
-      "lon": 34.457118
+      "lat": 31.34776,
+      "lon": 34.26582
     },
     {
       "id": "KYS2037",
@@ -1834,8 +1834,8 @@
       "nameAr": "موقع التعاون",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.52157,
-      "lon": 34.45177
+      "lat": 31.35272,
+      "lon": 34.27273
     },
     {
       "id": "KYS4267",
@@ -1843,8 +1843,8 @@
       "nameAr": "موقع التغريبة",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.520898,
-      "lon": 34.449556
+      "lat": 31.352505,
+      "lon": 34.268502
     },
     {
       "id": "KYS4727",
@@ -1852,8 +1852,8 @@
       "nameAr": "موقع سند",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.524079,
-      "lon": 34.452256
+      "lat": 31.351033,
+      "lon": 34.269231
     },
     {
       "id": "KYS4873",
@@ -1861,8 +1861,8 @@
       "nameAr": "موقع الأقصى 4",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.517769,
-      "lon": 34.453843
+      "lat": 31.357583,
+      "lon": 34.275528
     },
     {
       "id": "KYS4874",
@@ -1870,8 +1870,8 @@
       "nameAr": "موقع الأقصى 5",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.5157,
-      "lon": 34.45519
+      "lat": 31.358167,
+      "lon": 34.2755
     },
     {
       "id": "KYS4875",
@@ -1879,8 +1879,8 @@
       "nameAr": "موقع الأقصى 6",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.35675,
-      "lon": 34.273611
+      "lat": 31.356806,
+      "lon": 34.274389
     },
     {
       "id": "KYS5065",
@@ -1888,8 +1888,8 @@
       "nameAr": "موقع الأسرة",
       "place": "South of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.353417,
-      "lon": 34.275932
+      "lat": 31.347353,
+      "lon": 34.2641293
     },
     {
       "id": "KYS5184",
@@ -1897,8 +1897,8 @@
       "nameAr": "موقع الأقصى 7",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.358167,
-      "lon": 34.2755
+      "lat": 31.35675,
+      "lon": 34.273611
     },
     {
       "id": "KYS5188",
@@ -1915,8 +1915,8 @@
       "nameAr": "موقع الأقصى 9",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.357279,
-      "lon": 34.276875
+      "lat": 31.3572794,
+      "lon": 34.2768749
     },
     {
       "id": "KYS5460",
@@ -1924,8 +1924,8 @@
       "nameAr": "موقع الأقصى 8",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.35729,
-      "lon": 34.27543
+      "lat": 31.353417,
+      "lon": 34.275932
     },
     {
       "id": "KYS5571",
@@ -1933,8 +1933,8 @@
       "nameAr": "موقع الأقصى 2",
       "place": "Al-Aqsa University area",
       "governorate": "Khan Younis",
-      "lat": 31.353381,
-      "lon": 34.274057
+      "lat": 31.3533812,
+      "lon": 34.2740571
     },
     {
       "id": "KYS5575",
@@ -1942,8 +1942,8 @@
       "nameAr": "موقع الغيث",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.357583,
-      "lon": 34.275528
+      "lat": 31.3525509,
+      "lon": 34.2709322
     },
     {
       "id": "KYS5582",
@@ -1951,8 +1951,8 @@
       "nameAr": "موقع المهاجرين",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.356806,
-      "lon": 34.274389
+      "lat": 31.3499459,
+      "lon": 34.2709602
     },
     {
       "id": "KYS5584",
@@ -1960,8 +1960,8 @@
       "nameAr": "موقع الندى",
       "place": "South of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.35047,
-      "lon": 34.27408
+      "lat": 31.3486478,
+      "lon": 34.265332
     },
     {
       "id": "KYS5585",
@@ -1969,8 +1969,8 @@
       "nameAr": "موقع النور",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.352285,
-      "lon": 34.275298
+      "lat": 31.353605,
+      "lon": 34.2693998
     },
     {
       "id": "KYS5589",
@@ -1978,8 +1978,8 @@
       "nameAr": "موقع الاستقلال",
       "place": "South of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.349492,
-      "lon": 34.272037
+      "lat": 31.345885,
+      "lon": 34.266545
     },
     {
       "id": "KYS5592",
@@ -1987,8 +1987,8 @@
       "nameAr": "موقع الزهراء",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.35614,
-      "lon": 34.27218
+      "lat": 31.3518097,
+      "lon": 34.2727566
     },
     {
       "id": "KYS5594",
@@ -1996,8 +1996,8 @@
       "nameAr": "موقع أمجاد",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.352505,
-      "lon": 34.268502
+      "lat": 31.352285,
+      "lon": 34.2752983
     },
     {
       "id": "KYS5600",
@@ -2005,8 +2005,8 @@
       "nameAr": "موقع مجد",
       "place": "East of Al-Attar",
       "governorate": "Khan Younis",
-      "lat": 31.353605,
-      "lon": 34.2694
+      "lat": 31.3494917,
+      "lon": 34.2720367
     },
     {
       "id": "GZA0388",

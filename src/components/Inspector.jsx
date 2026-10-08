@@ -1,7 +1,7 @@
 import blocks from '../data/blocks.json'
 import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
-import { partnerSitesByOthers as partnerSites } from '../lib/partners'
+import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
 import { formatCoord, formatCount, formatKm, formatNumber } from '../lib/format'
 import { haversineKm, nearest, pointInRing } from '../lib/geo'
 import { siteTypology } from '../lib/areas'
@@ -30,11 +30,13 @@ export default function Inspector() {
           <span className="pill" style={{ '--c': area?.color }}>{site.neighborhood}</span>
           <span className={inPlan ? 'pill solid' : 'pill'}>{inPlan ? 'In plan' : 'Outside plan'}</span>
           {overlaps.candidateIds.has(site.id) ? <span className="pill green">Currently managed</span> : null}
+          {partnerPill(site.id)}
           {area?.anchorId === site.id ? <span className="pill">Area anchor</span> : null}
         </div>
         <section>
           <h3>Properties</h3>
           <Row label="Site ID">{site.id}</Row>
+          {partnerRow(site.id)}
           <Row label="Typology">{siteTypology(site.id) || '—'}</Row>
           {site.status ? <Row label="Status">{site.status}</Row> : null}
           <Row label="Households">{formatCount(site.hhs)}</Row>
@@ -111,10 +113,12 @@ export default function Inspector() {
         <div className="pills">
           {site.governorate ? <span className="pill green">{site.governorate}</span> : null}
           {site.place ? <span className="pill">{site.place}</span> : null}
+          {partnerPill(site.id)}
         </div>
         <section>
           <h3>Properties</h3>
           <Row label="Site ID">{site.id}</Row>
+          {partnerRow(site.id)}
           <Row label="Typology">{siteTypology(site.id) || '—'}</Row>
           {footprint?.households != null ? <Row label="Households">{formatNumber(footprint.households)}</Row> : null}
           {footprint?.individuals != null ? <Row label="Individuals">{formatNumber(footprint.individuals)}</Row> : null}
@@ -259,10 +263,12 @@ export default function Inspector() {
           {site.Governorate ? <span className="pill">{site.Governorate}</span> : null}
           {site.Neighbourhood ? <span className="pill">{site.Neighbourhood}</span> : null}
           {inPlan ? <span className="pill solid">In plan</span> : null}
+          {partnerPill(site.id) || partnerPill(site['New Site ID'])}
         </div>
         <section>
           <h3>Properties</h3>
           <Row label="Site ID">{site.id}</Row>
+          {partnerRow(site.id) || partnerRow(site['New Site ID'])}
           <Row label="Typology">{siteTypology(site.id, site['New Site ID']) || '—'}</Row>
           {here ? <Row label="Coordinates">{formatCoord(here.lat, here.lon)}</Row> : null}
           {here ? <Row label="Nearest Aisha">{serviceText(closestAisha, (item) => item.point.address)}</Row> : null}
@@ -348,6 +354,18 @@ function Header({ eyebrow, title, onClose }) {
       </button>
     </header>
   )
+}
+
+function partnerPill(id) {
+  const site = partnerFor(id)
+  if (!site) return null
+  return <span className="pill green">{site.partner ? `Managed by ${site.partner}` : 'Managed by a partner'}</span>
+}
+
+function partnerRow(id) {
+  const site = partnerFor(id)
+  if (!site) return null
+  return <Row label="Partner">{site.partner || '—'}</Row>
 }
 
 function Row({ label, children }) {

@@ -1,15 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import catalog from './data/catalog.json'
-import { partnerSitesByOthers as partnerSites } from './lib/partners'
-import { areaContents, areaPopulation, dotInside, downloadAllSitesWorkbook, downloadAreaWorkbook, partnerSitesIn } from './lib/areas'
+import { listedAsPartner, partnerFor, partnerSearchParts, partnerSitesByOthers as partnerSites } from './lib/partners'
+import { areaContents, areaPopulation, dotInside, downloadAllSitesWorkbook, downloadAreaWorkbook } from './lib/areas'
 import { downloadCsv, haversineKm } from './lib/geo'
 import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, verificationCandidates } from './lib/sites'
+import { listedAsManaged, managedLayerSites, usesCorrectedCoordinate } from './lib/managed-layer'
 
 const extentDots = polygonSites(catalog)
 const siteCatalog = {
   ...catalog,
-  candidates: [...verificationCandidates(catalog), ...extentDots.candidates],
-  managed: [...catalog.managed, ...extentDots.managed],
+  candidates: [...verificationCandidates(catalog), ...extentDots.candidates].filter((site) => !partnerFor(site.id)),
+  managed: managedLayerSites(catalog.managed),
 }
 
 const AREAS_KEY = 'acted-cccm-areas-v1'
@@ -21,6 +22,26 @@ const AppState = createContext(null)
 const areaOrder = new Map(catalog.areas.map((area, index) => [area.name, index]))
 const actSites = listActSites()
 
+function normalizeId(id) {
+  return String(id ?? '').trim().toUpperCase()
+}
+
+const sitesAlreadyOnMap = new Set()
+function rememberSite(id) {
+  const key = normalizeId(id)
+  if (key) sitesAlreadyOnMap.add(key)
+}
+for (const site of siteCatalog.candidates) rememberSite(site.id)
+for (const site of siteCatalog.managed) rememberSite(site.id)
+for (const site of actSites) {
+  rememberSite(site.id)
+  rememberSite(site['New Site ID'])
+}
+
+function partnerName(id) {
+  return partnerFor(id)?.partner || ''
+}
+
 function addSiteDot(dots, id, point) {
   const key = String(id ?? '').trim().toUpperCase()
   if (!key || !point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return
@@ -29,13 +50,12 @@ function addSiteDot(dots, id, point) {
   else dots.set(key, [point])
 }
 
-function countsFor(ring, dots, partnerDots) {
+function countsFor(ring, dots) {
   const contents = areaContents(ring, dots)
   const population = areaPopulation(contents.verification, contents.act, ring, dots)
   return {
     verification: contents.verification.length,
     act: contents.act.length,
-    partners: partnerSitesIn(ring, partnerDots).length,
     hhs: population.hhs,
     individuals: population.individuals,
   }
@@ -75,7 +95,7 @@ function normalizeDefinedAreas(raw) {
   if (!Array.isArray(raw)) return []
   const names = new Set(catalog.areas.map((area) => area.name))
   const featured = new Set()
-  return raw.filter((area) => (
+  const areas = raw.filter((area) => (
     area
     && typeof area.id === 'string'
     && typeof area.name === 'string'
@@ -97,6 +117,12 @@ function normalizeDefinedAreas(raw) {
       featured: showOnCard,
       visible: area.visible !== false,
     }
+  })
+  const chosen = new Set(areas.filter((area) => area.featured).map((area) => area.parent))
+  return areas.map((area) => {
+    if (chosen.has(area.parent)) return area
+    chosen.add(area.parent)
+    return { ...area, featured: true }
   })
 }
 
@@ -166,6 +192,8 @@ function actMatches(site, needle, activeArea) {
     site['New Site ID'],
     site.Neighbourhood,
     site.Governorate,
+    ...partnerSearchParts(site.id),
+    ...partnerSearchParts(site['New Site ID']),
   ])
 }
 
@@ -182,13 +210,13 @@ export function AppStateProvider({ children }) {
     plan: true,
     other: true,
     coverage: true,
-    blocks: true,
+    blocks: false,
     neighborhoods: true,
     extents: true,
     unlinkedExtents: true,
     managedExtents: true,
     managed: true,
-    partners: true,
+    partners: false,
     act: true,
     crcs: true,
     aisha: true,
@@ -219,6 +247,7 @@ export function AppStateProvider({ children }) {
   const draftRef = useRef(null)
   const editingRef = useRef(null)
   const editPointsRef = useRef(null)
+  const areasTouched = useRef(false)
 
   useEffect(() => {
     localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions))
@@ -249,15 +278,18 @@ export function AppStateProvider({ children }) {
   useEffect(() => {
     let cancel = false
     async function load() {
-      let areas = []
+      let areas = null
       try {
         const response = await fetch('/defined-areas.json', { cache: 'no-store' })
-        if (response.ok) areas = normalizeDefinedAreas(await response.json())
+        if (response.ok) {
+          const data = await response.json()
+          if (Array.isArray(data)) areas = normalizeDefinedAreas(data)
+        }
       } catch {
-        areas = []
+        areas = null
       }
-      if (!areas.length) areas = loadDefinedAreas()
-      if (cancel) return
+      if (areas == null) areas = loadDefinedAreas()
+      if (cancel || areasTouched.current) return
       setDefinedAreas(areas)
       setAreasReady(true)
     }
@@ -306,8 +338,14 @@ export function AppStateProvider({ children }) {
     }))
   }, [])
 
+  const changeDefinedAreas = useCallback((updater) => {
+    areasTouched.current = true
+    setAreasReady(true)
+    setDefinedAreas(updater)
+  }, [])
+
   useEffect(() => {
-    if (!areasReady) return undefined
+    if (!areasReady || !areasTouched.current) return undefined
     const timer = setTimeout(() => {
       fetch('/api/defined-areas', {
         method: 'POST',
@@ -359,7 +397,9 @@ export function AppStateProvider({ children }) {
   }, [])
 
   const placed = useCallback((type, id, lat, lon) => {
-    const center = type === 'candidate' || type === 'managed' || type === 'act' ? extentCenter(id) : null
+    const center = (type === 'candidate' || type === 'managed' || type === 'act') && !usesCorrectedCoordinate(type, id)
+      ? extentCenter(id)
+      : null
     const saved = positions[`${type}:${id}`]
     if (center && !offsetsReady) return center
     if (saved) return saved
@@ -396,21 +436,17 @@ export function AppStateProvider({ children }) {
     return dots
   }, [placed])
 
-  const partnerDots = useMemo(() => {
-    const dots = new Map()
-    for (const site of partnerSites) addSiteDot(dots, site.key, placed('partner', site.key, site.lat, site.lon))
-    return dots
-  }, [placed])
-
   const plan = useMemo(() => {
     const ids = new Set()
     for (const area of definedAreas) {
       if (!area.featured) continue
       for (const site of siteCatalog.candidates) {
+        if (listedAsManaged([site.id]) || listedAsPartner([site.id])) continue
         if (dotInside([site.id], area.ring, siteDots)) ids.add(site.id)
       }
       for (const site of actSites) {
         const keys = [site.id, site['New Site ID']].filter(Boolean)
+        if (listedAsManaged(keys) || listedAsPartner(keys)) continue
         if (dotInside(keys, area.ring, siteDots)) ids.add(site.id)
       }
     }
@@ -430,6 +466,7 @@ export function AppStateProvider({ children }) {
       const bucket = byArea[area.parent]
       const anchor = areaByName[area.parent]
       for (const site of siteCatalog.candidates) {
+        if (listedAsManaged([site.id]) || listedAsPartner([site.id])) continue
         const here = placed('candidate', site.id, site.lat, site.lon)
         if (!dotInside([site.id], area.ring, siteDots)) continue
         if (bucket) {
@@ -446,6 +483,7 @@ export function AppStateProvider({ children }) {
       }
       for (const site of actSites) {
         const keys = [site.id, site['New Site ID']].filter(Boolean)
+        if (listedAsManaged(keys) || listedAsPartner(keys)) continue
         if (!dotInside(keys, area.ring, siteDots)) continue
         const households = actAmount(site, 'Households')
         const people = actAmount(site, 'Individuals')
@@ -485,14 +523,14 @@ export function AppStateProvider({ children }) {
       .filter((site) => {
         if (!searching && scope === 'plan' && !plan.has(site.id)) return false
         if (activeArea && site.area !== activeArea.name) return false
-        return matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area])
+        return matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])
       })
       .sort((a, b) => areaOrder.get(a.area) - areaOrder.get(b.area) || a.rank - b.rank)
       .map((site) => ({
         type: 'candidate',
         id: site.id,
         title: site.name,
-        subtitle: searching ? `Candidate · ${site.id} · ${site.neighborhood}` : `${site.id} · ${site.neighborhood}`,
+        subtitle: [searching ? 'Candidate' : '', site.id, site.neighborhood, partnerName(site.id)].filter(Boolean).join(' · '),
         meta: `${site.hhs.toLocaleString('en-US')} HH`,
         color: areaByName[site.area]?.color ?? '#337ea9',
         inPlan: plan.has(site.id),
@@ -507,7 +545,7 @@ export function AppStateProvider({ children }) {
         type: 'act',
         id: site.id,
         title: site['Site name'] || site.id,
-        subtitle: [searching ? 'ACT' : '', site.id, site.Neighbourhood].filter(Boolean).join(' · '),
+        subtitle: [searching ? 'ACT' : '', site.id, site.Neighbourhood, partnerName(site.id) || partnerName(site['New Site ID'])].filter(Boolean).join(' · '),
         meta: actAmount(site, 'Households') ? `${actAmount(site, 'Households').toLocaleString('en-US')} HH` : '',
         color: '#3949ab',
       }))
@@ -520,14 +558,14 @@ export function AppStateProvider({ children }) {
           const near = haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
           if (!named && !near) return false
         }
-        return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate])
+        return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, ...partnerSearchParts(site.id)])
       })
       .sort((a, b) => a.governorate.localeCompare(b.governorate) || a.name.localeCompare(b.name))
       .map((site) => ({
         type: 'managed',
         id: site.id,
         title: site.name,
-        subtitle: [searching ? 'Managed' : '', site.id, site.place].filter(Boolean).join(' · '),
+        subtitle: [searching ? 'Managed' : '', site.id, site.place, partnerName(site.id)].filter(Boolean).join(' · '),
         meta: site.governorate,
         color: '#0f7b6c',
       }))
@@ -561,6 +599,7 @@ export function AppStateProvider({ children }) {
       }))
 
     const partners = searching ? partnerSites
+      .filter((site) => !sitesAlreadyOnMap.has(normalizeId(site.key)))
       .filter((site) => matchesQuery(needle, [site.name, site.nameAr, site.id, site.partner, site.governorate, site.neighborhood]))
       .map((site) => ({
         type: 'partner',
@@ -585,9 +624,9 @@ export function AppStateProvider({ children }) {
     const searching = needle.length > 0
     const activeArea = searching || areaFilter === 'all' ? null : areaByName[areaFilter]
     return {
-      plan: siteCatalog.candidates.filter((site) => plan.has(site.id) && (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area])).length
+      plan: siteCatalog.candidates.filter((site) => plan.has(site.id) && (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])).length
         + actSites.filter((site) => plan.has(site.id) && actMatches(site, needle, activeArea)).length,
-      candidates: siteCatalog.candidates.filter((site) => (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area])).length,
+      candidates: siteCatalog.candidates.filter((site) => (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])).length,
       act: actSites.filter((site) => actMatches(site, needle, activeArea)).length,
       managed: siteCatalog.managed.filter((site) => {
         if (activeArea) {
@@ -596,7 +635,7 @@ export function AppStateProvider({ children }) {
           const near = haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
           if (!named && !near) return false
         }
-        return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate])
+        return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, ...partnerSearchParts(site.id)])
       }).length,
       aisha: catalog.aisha.filter((site) => {
         if (activeArea && haversineKm(site.lat, site.lon, activeArea.lat, activeArea.lon) > 6) return false
@@ -608,19 +647,19 @@ export function AppStateProvider({ children }) {
 
   const draftCounts = useMemo(() => {
     if (!draft || draft.length < 3) return null
-    return countsFor(draft.map(([lat, lon]) => [lon, lat]), siteDots, partnerDots)
-  }, [draft, partnerDots, siteDots])
+    return countsFor(draft.map(([lat, lon]) => [lon, lat]), siteDots)
+  }, [draft, siteDots])
 
   const editCounts = useMemo(() => {
     if (!editPoints || editPoints.length < 3) return null
-    return countsFor(editPoints.map(([lat, lon]) => [lon, lat]), siteDots, partnerDots)
-  }, [editPoints, partnerDots, siteDots])
+    return countsFor(editPoints.map(([lat, lon]) => [lon, lat]), siteDots)
+  }, [editPoints, siteDots])
 
   const areaCounts = useMemo(() => {
     const counts = {}
-    for (const area of definedAreas) counts[area.id] = countsFor(area.ring, siteDots, partnerDots)
+    for (const area of definedAreas) counts[area.id] = countsFor(area.ring, siteDots)
     return counts
-  }, [definedAreas, partnerDots, siteDots])
+  }, [definedAreas, siteDots])
 
   const startDraw = useCallback((parent) => {
     editingRef.current = null
@@ -666,7 +705,7 @@ export function AppStateProvider({ children }) {
     const points = editPointsRef.current
     if (!id || !points || points.length < 3) return
     const ring = points.map(([lat, lon]) => [lon, lat])
-    setDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, ring } : area)))
+    changeDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, ring } : area)))
     editingRef.current = null
     editPointsRef.current = null
     setEditingId(null)
@@ -711,18 +750,18 @@ export function AppStateProvider({ children }) {
     const points = draftRef.current
     if (!points || points.length < 3 || !drawingParent) return
     const id = `area-${Date.now()}`
-    setDefinedAreas((current) => {
-      const count = current.filter((area) => area.parent === drawingParent).length + 1
+    changeDefinedAreas((current) => {
+      const siblings = current.filter((area) => area.parent === drawingParent)
       return [
         ...current,
         {
           id,
-          name: `Area ${count}`,
+          name: `Area ${siblings.length + 1}`,
           color: AREA_COLORS[current.length % AREA_COLORS.length],
           parent: drawingParent,
           ring: points.map(([lat, lon]) => [lon, lat]),
           visible: true,
-          featured: false,
+          featured: !siblings.some((area) => area.featured),
         },
       ]
     })
@@ -733,15 +772,15 @@ export function AppStateProvider({ children }) {
   }, [drawingParent])
 
   const renameArea = useCallback((id, name) => {
-    setDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, name } : area)))
+    changeDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, name } : area)))
   }, [])
 
   const setAreaColor = useCallback((id, color) => {
-    setDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, color } : area)))
+    changeDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, color } : area)))
   }, [])
 
   const toggleDefinedArea = useCallback((id) => {
-    setDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, visible: !area.visible } : area)))
+    changeDefinedAreas((current) => current.map((area) => (area.id === id ? { ...area, visible: !area.visible } : area)))
   }, [])
 
   const deleteArea = useCallback((id) => {
@@ -751,18 +790,24 @@ export function AppStateProvider({ children }) {
       setEditingId(null)
       setEditPoints(null)
     }
-    setDefinedAreas((current) => current.filter((area) => area.id !== id))
+    changeDefinedAreas((current) => {
+      const removed = current.find((area) => area.id === id)
+      const next = current.filter((area) => area.id !== id)
+      if (!removed?.featured) return next
+      const replacement = next.find((area) => area.parent === removed.parent)
+      if (!replacement) return next
+      return next.map((area) => (area.id === replacement.id ? { ...area, featured: true } : area))
+    })
     setNamingId((current) => (current === id ? null : current))
   }, [])
 
   const featureArea = useCallback((id) => {
-    setDefinedAreas((current) => {
+    changeDefinedAreas((current) => {
       const area = current.find((item) => item.id === id)
-      if (!area) return current
-      const next = !area.featured
+      if (!area || area.featured) return current
       return current.map((item) => {
         if (item.parent !== area.parent) return item
-        return { ...item, featured: next && item.id === id }
+        return { ...item, featured: item.id === id }
       })
     })
   }, [])
@@ -774,8 +819,8 @@ export function AppStateProvider({ children }) {
   const exportDefinedArea = useCallback((id) => {
     const area = definedAreas.find((item) => item.id === id)
     if (!area) return
-    downloadAreaWorkbook(area.name.trim() || 'Area', area.ring, siteDots, partnerDots)
-  }, [definedAreas, partnerDots, siteDots])
+    downloadAreaWorkbook(area.name.trim() || 'Area', area.ring, siteDots)
+  }, [definedAreas, siteDots])
 
   const exportPlan = useCallback(() => {
     const header = ['Area', 'Site ID', 'Site name', 'Neighborhood', 'Households', 'Individuals', 'Latitude', 'Longitude', 'Distance to CRC (km)', 'Rank', 'Workbook selection']

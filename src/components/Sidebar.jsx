@@ -297,7 +297,7 @@ export default function Sidebar() {
                   {children.length === 0 ? <p className="area-empty">No areas under {target.name} yet.</p> : null}
                   {children.map((area) => {
                     const editing = editingId === area.id
-                    const totals = (editing ? editCounts : null) ?? areaCounts[area.id] ?? { verification: 0, act: 0, partners: 0, hhs: 0, individuals: 0 }
+                    const totals = (editing ? editCounts : null) ?? areaCounts[area.id] ?? { verification: 0, act: 0, hhs: 0, individuals: 0 }
                     return (
                       <div key={area.id} className={editing ? 'area-row is-editing' : 'area-row'}>
                         <div className="area-title">
@@ -374,7 +374,7 @@ export default function Sidebar() {
                           <button type="button" aria-label={`Remove ${area.name}`} onClick={() => deleteArea(area.id)}>Remove</button>
                         </span>
                         <button type="button" className="area-meta" onClick={() => openArea(area.id)}>
-                          {totals.verification} {totals.verification === 1 ? 'site' : 'sites'} · {totals.act} ACT sites · {totals.partners} managed by partners · {formatCount(totals.hhs)} HH · {formatNumber(totals.individuals)} individuals
+                          {totals.verification} {totals.verification === 1 ? 'site' : 'sites'} · {totals.act} ACT sites · {formatCount(totals.hhs)} HH · {formatNumber(totals.individuals)} individuals
                         </button>
                       </div>
                     )
