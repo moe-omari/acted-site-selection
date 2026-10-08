@@ -181,6 +181,7 @@ MANUAL_EXTENT_LINKS = {
     "ACT3002": ("KYS5593", "Al-Zaitona"),
     "alhorrya 2": ("KYS5320", "Al-Hurriya 2"),
     "ACT3003": ("KYS5320", "Al-Hurriya 2"),
+    "Al-Taawun2": ("ACT1301", "Al-Taawun2"),
 }
 
 MANUAL_ACT_CODES = {
@@ -237,7 +238,7 @@ def build_extents():
             }
             if code in MANUAL_ACT_CODES:
                 properties["actCode"] = MANUAL_ACT_CODES[code]
-            elif code.upper().startswith("ACT") and official != code:
+            elif code.upper().startswith("ACT") and official != code and not str(official).upper().startswith("ACT"):
                 properties["actCode"] = code
             features.append({"type": "Feature", "properties": properties, "geometry": geom})
     write(DATA / "extents.json", features)
