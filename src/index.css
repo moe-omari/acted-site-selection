@@ -269,7 +269,7 @@ button { cursor: pointer; }
   font-weight: 500;
 }
 
-.area-draw-actions { display: flex; }
+.area-draw-actions { display: flex; gap: 8px; }
 
 .area-hint {
   margin: 0 4px 6px;

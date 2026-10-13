@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import catalog from './data/catalog.json'
 import { listedAsPartner, partnerFor, partnerSearchParts, partnerSitesByOthers as partnerSites } from './lib/partners'
-import { areaContents, areaPopulation, dotInside, downloadAllSitesWorkbook, downloadAreaWorkbook } from './lib/areas'
+import { areaContents, areaPopulation, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook } from './lib/areas'
 import { downloadCsv, haversineKm } from './lib/geo'
-import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, verificationCandidates } from './lib/sites'
+import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, usesSheetCoordinate, verificationCandidates } from './lib/sites'
 import { listedAsManaged, managedLayerSites, usesCorrectedCoordinate } from './lib/managed-layer'
 
 const extentDots = polygonSites(catalog)
@@ -397,7 +397,9 @@ export function AppStateProvider({ children }) {
   }, [])
 
   const placed = useCallback((type, id, lat, lon) => {
-    const center = (type === 'candidate' || type === 'managed' || type === 'act') && !usesCorrectedCoordinate(type, id)
+    const center = (type === 'candidate' || type === 'managed' || type === 'act')
+      && !usesCorrectedCoordinate(type, id)
+      && !usesSheetCoordinate(type, id)
       ? extentCenter(id)
       : null
     const saved = positions[`${type}:${id}`]
@@ -573,7 +575,7 @@ export function AppStateProvider({ children }) {
     const aisha = catalog.aisha
       .filter((site) => {
         if (activeArea && haversineKm(site.lat, site.lon, activeArea.lat, activeArea.lon) > 6) return false
-        return matchesQuery(needle, [site.address, site.governorate, site.donor, site.id, site.focalPoint])
+        return matchesQuery(needle, [site.address, site.addressAr, site.governorate, site.donor, site.id, site.focalPoint])
       })
       .map((site) => ({
         type: 'aisha',
@@ -639,7 +641,7 @@ export function AppStateProvider({ children }) {
       }).length,
       aisha: catalog.aisha.filter((site) => {
         if (activeArea && haversineKm(site.lat, site.lon, activeArea.lat, activeArea.lon) > 6) return false
-        return matchesQuery(needle, [site.address, site.governorate, site.donor, site.id, site.focalPoint])
+        return matchesQuery(needle, [site.address, site.addressAr, site.governorate, site.donor, site.id, site.focalPoint])
       }).length,
       crcs: catalog.crcs.filter((site) => (!activeArea || site.region === activeArea.crc) && matchesQuery(needle, [site.name, site.region])).length,
     }
@@ -816,6 +818,10 @@ export function AppStateProvider({ children }) {
     downloadAllSitesWorkbook(definedAreas, siteDots)
   }, [definedAreas, siteDots])
 
+  const exportBoundaries = useCallback(() => {
+    downloadAreaBoundaries(definedAreas)
+  }, [definedAreas])
+
   const exportDefinedArea = useCallback((id) => {
     const area = definedAreas.find((item) => item.id === id)
     if (!area) return
@@ -926,6 +932,7 @@ export function AppStateProvider({ children }) {
     featureArea,
     exportDefinedArea,
     exportApproved,
+    exportBoundaries,
   }
 
   return <AppState.Provider value={value}>{children}</AppState.Provider>

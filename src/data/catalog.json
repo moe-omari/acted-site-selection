@@ -2412,51 +2412,6 @@
       "governorate": "Gaza",
       "lat": 31.522978,
       "lon": 34.448421
-    },
-    {
-      "id": "GZA5343",
-      "name": "Al Qastal camp",
-      "nameAr": "مخيم القسطل",
-      "place": "An Naser-Gaza",
-      "governorate": "Gaza",
-      "lat": 31.530785,
-      "lon": 34.460006
-    },
-    {
-      "id": "GZA5443",
-      "name": "Nisr Al-Shamali",
-      "nameAr": "مخيم النصر الشمالي",
-      "place": "An Naser-Gaza",
-      "governorate": "Gaza",
-      "lat": 31.530868,
-      "lon": 34.463535
-    },
-    {
-      "id": "GZA5444",
-      "name": "Ahel Al khair",
-      "nameAr": "مخيم اهل الخير",
-      "place": "An Naser-Gaza",
-      "governorate": "Gaza",
-      "lat": 31.529812,
-      "lon": 34.463473
-    },
-    {
-      "id": "GZA6018",
-      "name": "Al-Jawad Site",
-      "nameAr": "موقع الجواد",
-      "place": "Northern Remal",
-      "governorate": "Gaza",
-      "lat": 31.517398,
-      "lon": 34.453797
-    },
-    {
-      "id": "GZA6027",
-      "name": "Al-Salam Site",
-      "nameAr": "موقع السلام",
-      "place": "Northern Remal",
-      "governorate": "Gaza",
-      "lat": 31.521671,
-      "lon": 34.451304
     }
   ],
   "crcs": [
@@ -2464,8 +2419,8 @@
       "id": "north",
       "name": "North CRC",
       "region": "North",
-      "lat": 31.52731,
-      "lon": 34.44887
+      "lat": 31.52362,
+      "lon": 34.45221
     },
     {
       "id": "south",
@@ -2629,6 +2584,36 @@
       "email": "m.eljojo@aisha.ps",
       "organization": "AISHA Association for Woman and Child Protection",
       "type": "NNGO"
+    },
+    {
+      "id": "shanti",
+      "lat": 31.536241,
+      "lon": 34.470853,
+      "governorate": "Gaza City",
+      "address": "Al-Shanti Land Shelter",
+      "addressAr": "غزة - أرض الشنطي",
+      "status": "Active",
+      "spaces": 2
+    },
+    {
+      "id": "crescent",
+      "lat": 31.52872,
+      "lon": 34.4548,
+      "governorate": "Gaza City",
+      "address": "Palestinian Crescent Society for Relief and Development",
+      "addressAr": "غزة - النصر مقابل كرستال عصفور سابقا",
+      "status": "Active",
+      "spaces": 2
+    },
+    {
+      "id": "wahda",
+      "lat": 31.367556,
+      "lon": 34.272556,
+      "governorate": "Khan Yunis",
+      "address": "Al-Wahda Shelter",
+      "addressAr": "مواصي خانيونس - جنوب ميناء الصيادين - بجوار محل خميس ابو طه",
+      "status": "Active",
+      "spaces": 2
     }
   ]
 }

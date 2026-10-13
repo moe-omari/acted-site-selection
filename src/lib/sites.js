@@ -2,6 +2,7 @@ import extents from '../data/extents.json'
 import managedExtents from '../data/managed-extents.json'
 import registers from '../data/registers.json'
 import { haversineKm, pointInRing, ringCentroid } from './geo'
+import { partnerFor } from './partners'
 
 const actSheet = registers.act
 const actColumn = Object.fromEntries(actSheet.headers.map((name, index) => [name, index]))
@@ -167,8 +168,35 @@ const verificationIndividualColumn = headerIndex(
   'Estimated number of individuals currently accommodated',
 )
 const verificationNameColumn = verificationSheet.headers.indexOf('Site Name')
+const verificationNameArColumn = verificationSheet.headers.indexOf('Site Name (Arabic)')
 const verificationStatusColumn = verificationSheet.headers.indexOf('Site Status')
 const verificationDateColumn = verificationSheet.headers.indexOf('Date of interview:')
+const verificationLonColumn = verificationSheet.headers.indexOf('Longitude')
+const verificationLatColumn = verificationSheet.headers.indexOf('Latitude')
+
+function sheetPoint(row) {
+  const lat = Number(row[verificationLatColumn])
+  const lon = Number(row[verificationLonColumn])
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  if (lat < 31 || lat > 32.2 || lon < 34 || lon > 34.7) return null
+  return { lat, lon }
+}
+
+function sheetNameAr(row) {
+  if (verificationNameArColumn < 0) return ''
+  return String(row[verificationNameArColumn] ?? '').trim()
+}
+
+const sheetCoordinateIds = new Set()
+for (const row of verificationSheet.rows) {
+  if (!sheetPoint(row)) continue
+  const id = normalizeId(row[verificationSheet.siteId] || row[verificationSheet.formSiteId])
+  if (id) sheetCoordinateIds.add(id)
+}
+
+export function usesSheetCoordinate(type, id) {
+  return type === 'candidate' && sheetCoordinateIds.has(normalizeId(id))
+}
 
 function laterAssessment(current, next) {
   const currentDate = String(current[verificationDateColumn] ?? '')
@@ -196,13 +224,15 @@ export function verificationCandidates(catalog) {
   const known = new Set(sites.map((site) => normalizeId(site.id)))
   for (const [id, row] of rowsById) {
     if (known.has(id) || managedById.has(id)) continue
-    const point = extentCenter(id)
+    const point = sheetPoint(row) || extentCenter(id)
     if (!point) continue
     const area = nearestArea(catalog.areas, point.lat, point.lon)
     const sheetId = String(row[verificationSheet.siteId] || row[verificationSheet.formSiteId] || id).trim()
+    const nameAr = sheetNameAr(row)
     sites.push({
       id: sheetId,
       name: String(row[verificationNameColumn] || sheetId).trim() || sheetId,
+      ...(nameAr ? { nameAr } : {}),
       area: area?.name ?? '',
       neighborhood: area?.neighborhood ?? '',
       hhs: populationAmount(row[verificationHouseholdColumn]),
@@ -369,6 +399,51 @@ export function barePolygonDots(catalog) {
         lon: center.lon,
         name: feature.properties?.name || owner.id,
       })
+    })
+  }
+  return dots
+}
+
+export function orphanExtentDots(catalog) {
+  const covered = new Set()
+  for (const site of catalog.candidates) covered.add(normalizeId(site.id))
+  for (const site of catalog.managed) covered.add(normalizeId(site.id))
+  for (const site of actMapSites()) covered.add(normalizeId(site.id))
+  const dots = []
+  const seen = new Set()
+  for (const feature of managedExtents.features) {
+    const props = feature.properties || {}
+    const codes = [props.code, props.actCode, props.id].map(normalizeId).filter(Boolean)
+    if (codes.some((code) => covered.has(code))) continue
+    const center = ringCentroid(outerRing(feature) || [])
+    const key = normalizeId(props.id)
+    if (!center || !key || seen.has(key)) continue
+    seen.add(key)
+    dots.push({
+      type: 'managedExtent',
+      id: props.id,
+      lat: center.lat,
+      lon: center.lon,
+      name: props.name || props.code || props.id,
+    })
+  }
+  for (const feature of extents.features) {
+    const props = feature.properties || {}
+    const codes = [props.code, props.actCode, props.id].map(normalizeId).filter(Boolean)
+    if (codes.some((code) => covered.has(code))) continue
+    const partner = codes.map((code) => partnerFor(code)).find(Boolean)
+    if (!partner) continue
+    const center = ringCentroid(outerRing(feature) || [])
+    const key = `partner:${normalizeId(partner.key || partner.id)}`
+    if (!center || seen.has(key)) continue
+    seen.add(key)
+    dots.push({
+      type: 'partner',
+      id: partner.key || partner.id,
+      lat: center.lat,
+      lon: center.lon,
+      name: props.name || partner.name,
+      partner: partner.partner,
     })
   }
   return dots

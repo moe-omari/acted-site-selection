@@ -85,7 +85,14 @@ export function downloadCsv(filename, rows) {
   const csv = rows
     .map((row) => row.map(escapeCell).join(','))
     .join('\r\n')
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+  downloadBlob(filename, new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+}
+
+export function downloadJson(filename, value) {
+  downloadBlob(filename, new Blob([JSON.stringify(value)], { type: 'application/geo+json' }))
+}
+
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

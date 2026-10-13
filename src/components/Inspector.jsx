@@ -26,6 +26,7 @@ export default function Inspector() {
     return (
       <aside className="inspector">
         <Header eyebrow={site.area} title={site.name} onClose={() => setFocus(null)} />
+        {site.nameAr ? <p className="arabic" dir="auto">{site.nameAr}</p> : null}
         <div className="pills">
           <span className="pill" style={{ '--c': area?.color }}>{site.neighborhood}</span>
           <span className={inPlan ? 'pill solid' : 'pill'}>{inPlan ? 'In plan' : 'Outside plan'}</span>
@@ -151,19 +152,21 @@ export default function Inspector() {
     return (
       <aside className="inspector">
         <Header eyebrow="Aisha safe space" title={site.address} onClose={() => setFocus(null)} />
+        {site.addressAr ? <p className="arabic" dir="auto">{site.addressAr}</p> : null}
         <div className="pills">
           <span className="pill pink">{site.status}</span>
           <span className="pill">{site.governorate}</span>
-          <span className="pill">{site.type}</span>
+          {site.type ? <span className="pill">{site.type}</span> : null}
         </div>
         <section>
           <h3>Properties</h3>
-          <Row label="Number">{site.id}</Row>
-          <Row label="Donor">{site.donor}</Row>
-          <Row label="Organization">{site.organization}</Row>
-          <Row label="Focal point">{site.focalPoint}</Row>
-          <Row label="Phone"><a href={`tel:${site.phone}`}>{site.phone}</a></Row>
-          <Row label="Email"><a href={`mailto:${site.email}`}>{site.email}</a></Row>
+          {/^\d+$/.test(site.id) ? <Row label="Number">{site.id}</Row> : null}
+          {site.spaces != null ? <Row label="Safe spaces">{formatNumber(site.spaces)}</Row> : null}
+          {site.donor ? <Row label="Donor">{site.donor}</Row> : null}
+          {site.organization ? <Row label="Organization">{site.organization}</Row> : null}
+          {site.focalPoint ? <Row label="Focal point">{site.focalPoint}</Row> : null}
+          {site.phone ? <Row label="Phone"><a href={`tel:${site.phone}`}>{site.phone}</a></Row> : null}
+          {site.email ? <Row label="Email"><a href={`mailto:${site.email}`}>{site.email}</a></Row> : null}
           <Row label="Coordinates">{formatCoord(here.lat, here.lon)}</Row>
         </section>
         {closestArea ? (
@@ -291,7 +294,7 @@ export default function Inspector() {
     const title = place.name || place.code || 'Managed extent'
     return (
       <aside className="inspector">
-        <Header eyebrow="Managed site extent" title={title} onClose={() => setFocus(null)} />
+        <Header eyebrow={place.management === 'Unmanaged' ? 'Unmanaged site' : 'Managed site extent'} title={title} onClose={() => setFocus(null)} />
         {place.nameAr ? <p className="arabic" dir="auto">{place.nameAr}</p> : null}
         <div className="pills">
           {place.code ? <span className="pill">{place.code}</span> : null}

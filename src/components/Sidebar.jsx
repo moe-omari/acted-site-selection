@@ -84,6 +84,7 @@ export default function Sidebar() {
     featureArea,
     exportDefinedArea,
     exportApproved,
+    exportBoundaries,
     drawingParent,
     openArea,
     openCompare,
@@ -258,6 +259,7 @@ export default function Sidebar() {
             <div className="area-block-head">
               <span>Areas</span>
               <span className="area-draw-actions">
+                <button type="button" className="text-btn" title="Download every drawn area boundary as GeoJSON" onClick={exportBoundaries}>Export boundaries</button>
                 <button type="button" className="text-btn" title="Download every site verification assessment and every ACT site, with the map neighborhood, area, and dot coordinate for each one" onClick={exportApproved}>Export sites</button>
               </span>
             </div>

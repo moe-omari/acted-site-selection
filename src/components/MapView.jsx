@@ -18,7 +18,7 @@ import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
 import neighborhoods from '../data/neighborhoods.json'
 import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
-import { siteForExtent, actRecord, actMapSites, barePolygonDots, unlinkedExtents } from '../lib/sites'
+import { siteForExtent, actRecord, actMapSites, barePolygonDots, orphanExtentDots, unlinkedExtents } from '../lib/sites'
 import { useAppState } from '../state'
 import { haversineKm } from '../lib/geo'
 import { formatCount, formatKm, formatNumber } from '../lib/format'
@@ -345,6 +345,7 @@ export default function MapView() {
   const focusKey = focus ? `${focus.type}:${focus.id}` : ''
   const unlinkedExtentData = useMemo(() => unlinkedExtents(catalog), [catalog])
   const bareDots = useMemo(() => barePolygonDots(catalog), [catalog])
+  const orphanDots = useMemo(() => orphanExtentDots(catalog), [catalog])
   const hoverKey = hover ? `${hover.type}:${hover.id}` : ''
 
   const visibleCandidates = catalog.candidates.filter((site) => candidateVisible(site, layers, plan, areaFilter))
@@ -651,6 +652,39 @@ export default function MapView() {
             pathOptions={{ color: '#d9730d', weight: 1.5, dashArray: '3 6', opacity: 0.85 }}
           />
         ) : null}
+
+        {layers.extents && !layers.partners && orphanDots.filter((dot) => dot.type === 'partner').map((dot) => (
+          <SiteDot
+            key={`extent-partner-${dot.id}`}
+            type="partner"
+            id={dot.id}
+            lat={dot.lat}
+            lon={dot.lon}
+            color="#0e7490"
+            filled
+            shape="square"
+            active={isActive('partner', dot.id, focusKey, hoverKey)}
+            title={dot.partner ? `${dot.name} · ${dot.partner}` : dot.name}
+            setFocus={setFocus}
+            moveSite={moveSite}
+          />
+        ))}
+
+        {layers.managedExtents && orphanDots.filter((dot) => dot.type === 'managedExtent').map((dot) => (
+          <SiteDot
+            key={`extent-managed-${dot.id}`}
+            type="managedExtent"
+            id={dot.id}
+            lat={dot.lat}
+            lon={dot.lon}
+            color="#3ca2e6"
+            filled
+            active={isActive('managedExtent', dot.id, focusKey, hoverKey)}
+            title={dot.name}
+            setFocus={setFocus}
+            moveSite={moveSite}
+          />
+        ))}
 
         {layers.partners && partnerSites.filter((site) => !sitesAlreadyOnMap.has(String(site.key).toUpperCase())).map((site) => {
           const here = placed('partner', site.key, site.lat, site.lon)

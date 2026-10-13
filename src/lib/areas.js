@@ -3,7 +3,7 @@ import catalog from '../data/catalog.json'
 import neighborhoods from '../data/neighborhoods.json'
 import registers from '../data/registers.json'
 import { listedAsPartner } from './partners'
-import { pointInRing } from './geo'
+import { downloadJson, pointInRing } from './geo'
 import { listedAsManaged } from './managed-layer'
 import { extentCenter, verificationCandidates } from './sites'
 
@@ -194,6 +194,34 @@ export function areaContents(areaRing, dots) {
     verification: verificationRows(areaRing, dots),
     act: actRows(areaRing, dots),
   }
+}
+
+export function downloadAreaBoundaries(areas) {
+  const features = (areas || [])
+    .filter((area) => Array.isArray(area?.ring) && area.ring.length >= 3)
+    .map((area) => ({
+      type: 'Feature',
+      properties: {
+        id: area.id,
+        name: area.name,
+        neighborhood: area.parent,
+        color: area.color,
+        selected: area.featured === true,
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [closedRing(area.ring)],
+      },
+    }))
+  downloadJson('area-boundaries.geojson', { type: 'FeatureCollection', features })
+}
+
+function closedRing(ring) {
+  const points = ring.map((pair) => [pair[0], pair[1]])
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (first[0] !== last[0] || first[1] !== last[1]) points.push(first)
+  return points
 }
 
 export function downloadAreaWorkbook(name, areaRing, dots) {
