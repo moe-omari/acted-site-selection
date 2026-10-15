@@ -5,7 +5,7 @@ import registers from '../data/registers.json'
 import { listedAsPartner } from './partners'
 import { downloadJson, pointInRing } from './geo'
 import { listedAsManaged } from './managed-layer'
-import { extentCenter, verificationCandidates } from './sites'
+import { extentCenter, verificationCandidates, verificationPopulation } from './sites'
 
 function normalizeId(id) {
   if (id == null) return ''
@@ -90,12 +90,6 @@ function amount(value) {
   return 0
 }
 
-const verificationHouseholdColumn = registers.verification.headers.findIndex((header) =>
-  String(header).replace(/\s+/g, ' ').startsWith('Estimated number of households currently accommodated'),
-)
-const verificationIndividualColumn = registers.verification.headers.findIndex((header) =>
-  String(header).replace(/\s+/g, ' ').startsWith('Estimated number of individuals currently accommodated'),
-)
 const typologyColumn = registers.verification.headers.findIndex((header) => String(header).includes('typology'))
 const typologyById = new Map()
 for (const row of registers.verification.rows) {
@@ -135,8 +129,7 @@ export function areaPopulation(verification, act, areaRing, dots, rings) {
   for (const row of verification) {
     const ids = rowIds(row, [registers.verification.siteId, registers.verification.formSiteId])
     const key = ids[0] || `verification-${chosen.size}`
-    const hhs = amount(row[verificationHouseholdColumn])
-    const individuals = amount(row[verificationIndividualColumn])
+    const { hhs, individuals } = verificationPopulation(row)
     if (!hhs && !individuals) continue
     const current = chosen.get(key)
     if (!current || individuals > current.individuals) chosen.set(key, { hhs, individuals, ids })

@@ -174,6 +174,17 @@ const verificationIndividualColumn = headerIndex(
   verificationSheet.headers,
   'Estimated number of individuals currently accommodated',
 )
+const verificationTotalColumn = verificationSheet.headers.indexOf('total_population')
+
+export function verificationPopulation(row) {
+  const households = populationAmount(row[verificationHouseholdColumn])
+  const stated = row[verificationIndividualColumn]
+  const statedBlank = stated == null || String(stated).trim() === ''
+  const individuals = statedBlank && verificationTotalColumn >= 0
+    ? populationAmount(row[verificationTotalColumn])
+    : populationAmount(stated)
+  return { hhs: households, individuals }
+}
 const verificationNameColumn = verificationSheet.headers.indexOf('Site Name')
 const verificationNameArColumn = verificationSheet.headers.indexOf('Site Name (Arabic)')
 const verificationStatusColumn = verificationSheet.headers.indexOf('Site Status')
@@ -209,7 +220,7 @@ function laterAssessment(current, next) {
   const currentDate = String(current[verificationDateColumn] ?? '')
   const nextDate = String(next[verificationDateColumn] ?? '')
   if (nextDate !== currentDate) return nextDate > currentDate ? next : current
-  return populationAmount(next[verificationIndividualColumn]) > populationAmount(current[verificationIndividualColumn]) ? next : current
+  return verificationPopulation(next).individuals > verificationPopulation(current).individuals ? next : current
 }
 
 export function verificationCandidates(catalog) {
@@ -236,14 +247,15 @@ export function verificationCandidates(catalog) {
     const area = nearestArea(catalog.areas, point.lat, point.lon)
     const sheetId = String(row[verificationSheet.siteId] || row[verificationSheet.formSiteId] || id).trim()
     const nameAr = sheetNameAr(row)
+    const population = verificationPopulation(row)
     sites.push({
       id: sheetId,
       name: String(row[verificationNameColumn] || sheetId).trim() || sheetId,
       ...(nameAr ? { nameAr } : {}),
       area: area?.name ?? '',
       neighborhood: area?.neighborhood ?? '',
-      hhs: populationAmount(row[verificationHouseholdColumn]),
-      individuals: populationAmount(row[verificationIndividualColumn]),
+      hhs: population.hhs,
+      individuals: population.individuals,
       lat: point.lat,
       lon: point.lon,
       distanceCrcKm: null,
