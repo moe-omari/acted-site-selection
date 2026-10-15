@@ -18,7 +18,7 @@ import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
 import neighborhoods from '../data/neighborhoods.json'
 import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
-import { siteForExtent, actRecord, actMapSites, barePolygonDots, orphanExtentDots, unlinkedExtents } from '../lib/sites'
+import { siteForExtent, actRecord, actMapSites, barePolygonDots, linkedSiteLayer, orphanExtentDots, unlinkedExtents } from '../lib/sites'
 import { useAppState } from '../state'
 import { haversineKm } from '../lib/geo'
 import { formatCount, formatKm, formatNumber } from '../lib/format'
@@ -346,6 +346,16 @@ export default function MapView() {
   const unlinkedExtentData = useMemo(() => unlinkedExtents(catalog), [catalog])
   const bareDots = useMemo(() => barePolygonDots(catalog), [catalog])
   const orphanDots = useMemo(() => orphanExtentDots(catalog), [catalog])
+  const siteExtentData = useMemo(() => featureCollection(extents.features.filter((feature) => !linkedSiteLayer(feature))), [])
+  const managedExtentData = useMemo(() => featureCollection(managedSiteExtents.features.filter((feature) => !linkedSiteLayer(feature))), [])
+  const managedLinkedExtents = useMemo(() => featureCollection([
+    ...taggedExtents(extents.features, 'managed', 'site'),
+    ...taggedExtents(managedSiteExtents.features, 'managed', 'managed'),
+  ]), [])
+  const partnerLinkedExtents = useMemo(() => featureCollection([
+    ...taggedExtents(extents.features, 'partner', 'site'),
+    ...taggedExtents(managedSiteExtents.features, 'partner', 'managed'),
+  ]), [])
   const hoverKey = hover ? `${hover.type}:${hover.id}` : ''
 
   const visibleCandidates = catalog.candidates.filter((site) => candidateVisible(site, layers, plan, areaFilter))
@@ -417,6 +427,7 @@ export default function MapView() {
 
   const extentLayers = useRef(new Map())
   const managedExtentLayers = useRef(new Map())
+  const partnerExtentLayers = useRef(new Map())
 
   const onExtent = useCallback((feature, layer) => {
     const { id, code, name } = feature.properties
@@ -502,12 +513,52 @@ export default function MapView() {
     )
   }, [focus])
 
+  const linkedManagedStyle = useCallback((feature) => (
+    feature.properties.extentSource === 'managed' ? managedExtentStyle(feature) : extentStyle(feature)
+  ), [extentStyle, managedExtentStyle])
+
+  const onLinkedManagedExtent = useCallback((feature, layer) => {
+    if (feature.properties.extentSource === 'managed') onManagedExtent(feature, layer)
+    else onExtent(feature, layer)
+  }, [onExtent, onManagedExtent])
+
+  const linkedPartnerStyle = useCallback((feature) => {
+    const selected = partnerExtentSelected(feature, focus)
+    const type = feature.properties.extentSource === 'managed' ? 'managedExtent' : 'extent'
+    return polygonStyle(feature, selected ? { type, id: feature.properties.id } : focus, type)
+  }, [focus])
+
+  const onPartnerExtent = useCallback((feature, layer) => {
+    const { id, code, name, actCode } = feature.properties
+    partnerExtentLayers.current.set(id, layer)
+    const title = name && name !== code ? `${code || ''} · ${name}`.replace(/^ · /, '') : String(code || name || 'Partner extent')
+    layer.bindTooltip(title, { className: 'site-tip', sticky: true, opacity: 1 })
+    layer.on('click', (event) => {
+      L.DomEvent.stopPropagation(event)
+      layer._path?.blur()
+      const partner = [code, actCode, id].map((item) => partnerFor(item)).find(Boolean)
+      if (partner) {
+        setFocus({ type: 'partner', id: partner.key || partner.id, source: 'map' })
+        return
+      }
+      const site = [code, actCode].map((item) => siteForExtent(catalog, item)).find(Boolean)
+      if (site) {
+        setFocus({ ...site, source: 'map' })
+        return
+      }
+      setFocus({ type: feature.properties.extentSource === 'managed' ? 'managedExtent' : 'extent', id, source: 'map' })
+    })
+  }, [catalog, setFocus])
+
   useEffect(() => {
     for (const layer of extentLayers.current.values()) {
       if (extentSelected(layer.feature, focus)) layer.bringToFront()
     }
     for (const layer of managedExtentLayers.current.values()) {
       if (managedExtentSelected(layer.feature, focus)) layer.bringToFront()
+    }
+    for (const layer of partnerExtentLayers.current.values()) {
+      if (partnerExtentSelected(layer.feature, focus)) layer.bringToFront()
     }
   }, [focus])
 
@@ -633,11 +684,19 @@ export default function MapView() {
         ) : null}
 
         {layers.extents ? (
-          <GeoJSON key="extents" data={extents} pane="extents" style={extentStyle} onEachFeature={onExtent} />
+          <GeoJSON key="extents" data={siteExtentData} pane="extents" style={extentStyle} onEachFeature={onExtent} />
         ) : null}
 
         {layers.managedExtents ? (
-          <GeoJSON key="managed-extents" data={managedSiteExtents} pane="managedExtents" style={managedExtentStyle} onEachFeature={onManagedExtent} />
+          <GeoJSON key="managed-extents" data={managedExtentData} pane="managedExtents" style={managedExtentStyle} onEachFeature={onManagedExtent} />
+        ) : null}
+
+        {layers.managed && managedLinkedExtents.features.length ? (
+          <GeoJSON key="managed-linked-extents" data={managedLinkedExtents} pane="managedExtents" style={linkedManagedStyle} onEachFeature={onLinkedManagedExtent} />
+        ) : null}
+
+        {layers.partners && partnerLinkedExtents.features.length ? (
+          <GeoJSON key="partner-linked-extents" data={partnerLinkedExtents} pane="extents" style={linkedPartnerStyle} onEachFeature={onPartnerExtent} />
         ) : null}
 
         {layers.unlinkedExtents ? (
@@ -652,23 +711,6 @@ export default function MapView() {
             pathOptions={{ color: '#d9730d', weight: 1.5, dashArray: '3 6', opacity: 0.85 }}
           />
         ) : null}
-
-        {layers.extents && !layers.partners && orphanDots.filter((dot) => dot.type === 'partner').map((dot) => (
-          <SiteDot
-            key={`extent-partner-${dot.id}`}
-            type="partner"
-            id={dot.id}
-            lat={dot.lat}
-            lon={dot.lon}
-            color="#0e7490"
-            filled
-            shape="square"
-            active={isActive('partner', dot.id, focusKey, hoverKey)}
-            title={dot.partner ? `${dot.name} · ${dot.partner}` : dot.name}
-            setFocus={setFocus}
-            moveSite={moveSite}
-          />
-        ))}
 
         {layers.managedExtents && orphanDots.filter((dot) => dot.type === 'managedExtent').map((dot) => (
           <SiteDot
@@ -911,6 +953,28 @@ export default function MapView() {
       <p className="map-credit">© Esri, DeLorme, NAVTEQ</p>
     </div>
   )
+}
+
+function featureCollection(features) {
+  return { type: 'FeatureCollection', features }
+}
+
+function taggedExtents(features, layer, source) {
+  return features
+    .filter((feature) => linkedSiteLayer(feature) === layer)
+    .map((feature) => ({ ...feature, properties: { ...feature.properties, extentSource: source } }))
+}
+
+function partnerExtentSelected(feature, focus) {
+  if (!focus || !feature) return false
+  const focusId = String(focus.id || '').toUpperCase()
+  const codes = [feature.properties.code, feature.properties.actCode, feature.properties.id]
+    .map((code) => String(code || '').toUpperCase())
+    .filter(Boolean)
+  if (focus.type === 'partner' || focus.type === 'candidate' || focus.type === 'act' || focus.type === 'managed') {
+    return codes.includes(focusId)
+  }
+  return (focus.type === 'extent' || focus.type === 'managedExtent') && focus.id === feature.properties.id
 }
 
 function managedExtentSelected(feature, focus) {

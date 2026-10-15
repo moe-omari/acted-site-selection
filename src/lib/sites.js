@@ -2,6 +2,7 @@ import extents from '../data/extents.json'
 import managedExtents from '../data/managed-extents.json'
 import registers from '../data/registers.json'
 import { haversineKm, pointInRing, ringCentroid } from './geo'
+import { listedAsManaged } from './managed-layer'
 import { partnerFor } from './partners'
 
 const actSheet = registers.act
@@ -260,6 +261,13 @@ function extentCodes(feature) {
   return [feature.properties?.code, feature.properties?.actCode, feature.properties?.id].map(normalizeId).filter(Boolean)
 }
 
+export function linkedSiteLayer(feature) {
+  const codes = extentCodes(feature)
+  if (listedAsManaged(codes)) return 'managed'
+  if (codes.some((code) => partnerFor(code))) return 'partner'
+  return null
+}
+
 function linkedExtentCodes(catalog) {
   const linked = new Set()
   for (const site of verificationCandidates(catalog)) linked.add(normalizeId(site.id))
@@ -341,11 +349,11 @@ export function unlinkedExtents(catalog) {
   for (const site of dots.managed) linked.add(normalizeId(site.id))
   const features = []
   for (const feature of extents.features) {
-    if (extentCodes(feature).some((code) => linked.has(code))) continue
+    if (linkedSiteLayer(feature) || extentCodes(feature).some((code) => linked.has(code))) continue
     features.push({ ...feature, properties: { ...feature.properties, unlinkedKind: 'extent' } })
   }
   for (const feature of managedExtents.features) {
-    if (extentCodes(feature).some((code) => linked.has(code))) continue
+    if (linkedSiteLayer(feature) || extentCodes(feature).some((code) => linked.has(code))) continue
     features.push({ ...feature, properties: { ...feature.properties, unlinkedKind: 'managed' } })
   }
   return { type: 'FeatureCollection', features }
@@ -420,7 +428,7 @@ export function orphanExtentDots(catalog) {
   for (const feature of managedExtents.features) {
     const props = feature.properties || {}
     const codes = [props.code, props.actCode, props.id].map(normalizeId).filter(Boolean)
-    if (codes.some((code) => covered.has(code))) continue
+    if (linkedSiteLayer(feature) || codes.some((code) => covered.has(code))) continue
     const center = ringCentroid(outerRing(feature) || [])
     const key = normalizeId(props.id)
     if (!center || !key || seen.has(key)) continue
@@ -431,25 +439,6 @@ export function orphanExtentDots(catalog) {
       lat: center.lat,
       lon: center.lon,
       name: props.name || props.code || props.id,
-    })
-  }
-  for (const feature of extents.features) {
-    const props = feature.properties || {}
-    const codes = [props.code, props.actCode, props.id].map(normalizeId).filter(Boolean)
-    if (codes.some((code) => covered.has(code))) continue
-    const partner = codes.map((code) => partnerFor(code)).find(Boolean)
-    if (!partner) continue
-    const center = ringCentroid(outerRing(feature) || [])
-    const key = `partner:${normalizeId(partner.key || partner.id)}`
-    if (!center || seen.has(key)) continue
-    seen.add(key)
-    dots.push({
-      type: 'partner',
-      id: partner.key || partner.id,
-      lat: center.lat,
-      lon: center.lon,
-      name: props.name || partner.name,
-      partner: partner.partner,
     })
   }
   return dots
