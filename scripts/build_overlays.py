@@ -156,10 +156,10 @@ def extent_parts(name):
 
 MANUAL_EXTENT_LINKS = {
     "مضلع 75": ("KYS3750", "Al-Jazeera"),
-    "مضلع 72": ("ACT1604", "الحياة 2"),
-    "مضلع 71": ("ACT1603", "الحياة 1"),
+    "مضلع 72": ("KYS5725", "الحياة 2"),
+    "مضلع 71": ("KYS5724", "الحياة 1"),
     "مضلع 4": ("KYS4094", "Al Rahma alGharbi"),
-    "مضلع 76": ("ACT1203", "المسلخ"),
+    "مضلع 76": ("KYS5749", "المسلخ"),
     "karama": ("KYS1318", "Al-Karama"),
     "اليمامه": ("KYS5128", "Al Yamamah Site"),
     "Al Majd 3": ("ACT1400", "Al Majd 3"),
@@ -167,9 +167,9 @@ MANUAL_EXTENT_LINKS = {
     "Naseem Al Sultan": ("ACT1207", "نسيم السلطان"),
     "الحياة المهمشين": ("KYS3818", "Al-Hayat"),
     "رحماء": ("KYS3930", "Al Astal"),
-    "مضلع 67": ("ACT1402", "AL KARAM ALALBANI"),
+    "مضلع 67": ("KYS5747", "AL KARAM ALALBANI"),
     "ACT1109": ("KYS4238", "Al-Ikhlas Site"),
-    "الاقصى": ("ACT1105", "الاقصى"),
+    "الاقصى": ("KYS5723", "الاقصى"),
     "KYS1601": ("KYS5690", "Al-Khaleej"),
     "KYS1605": ("KYS5715", "Dream Plus"),
     "RFH4985": ("ACT1403", "Ajyal 2"),
@@ -181,13 +181,32 @@ MANUAL_EXTENT_LINKS = {
     "ACT3002": ("KYS5593", "Al-Zaitona"),
     "alhorrya 2": ("KYS5320", "Al-Hurriya 2"),
     "ACT3003": ("KYS5320", "Al-Hurriya 2"),
-    "Al-Taawun2": ("ACT1301", "Al-Taawun2"),
+    "Al-Taawun2": ("KYS5803", "Al-Taawun2"),
+}
+
+SWEEP_CODES = {
+    "ACT0509": "GZA5804",
+    "ACT1003": "GZA5777",
+    "ACT1105": "KYS5723",
+    "ACT1112": "KYS5744",
+    "ACT1113": "KYS5729",
+    "ACT1203": "KYS5749",
+    "ACT1301": "KYS5803",
+    "ACT1302": "KYS5801",
+    "ACT1402": "KYS5747",
+    "ACT1603": "KYS5724",
+    "ACT1604": "KYS5725",
 }
 
 MANUAL_ACT_CODES = {
     "ACT1109": "ACT1109",
     "KYS1601": "ACT1601",
     "KYS1605": "ACT1605",
+    "مضلع 72": "ACT1604",
+    "مضلع 71": "ACT1603",
+    "مضلع 76": "ACT1203",
+    "مضلع 67": "ACT1402",
+    "الاقصى": "ACT1105",
 }
 
 
@@ -216,7 +235,7 @@ def build_extents():
                 continue
             raw = clean(mark.findtext("k:name", default="", namespaces=NS))
             code, label = extent_parts(raw)
-            official = alias.get(code, code)
+            official = SWEEP_CODES.get(code, alias.get(code, code))
             manual = manual_extent_link(raw, code, label)
             if manual:
                 official, label = manual

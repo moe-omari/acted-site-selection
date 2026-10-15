@@ -3,7 +3,7 @@ import { formatCount, formatGap, formatNumber } from '../lib/format'
 import { useAppState } from '../state'
 
 export default function PlanBar() {
-  const { catalog, stats, areaFilter, selectArea, definedAreas, areaCounts, targets, setPlanTarget, setAreaTarget } = useAppState()
+  const { catalog, stats, areaFilter, selectArea, definedAreas, areaCounts, targets, setPlanTarget } = useAppState()
   const householdGap = stats.hhs - targets.households
   const peopleGap = stats.individuals - targets.individuals
 
@@ -12,7 +12,7 @@ export default function PlanBar() {
       <div className={areaFilter === 'all' ? 'plan-card is-on' : 'plan-card'}>
         <button type="button" className="plan-card-body" onClick={() => selectArea('all')}>
           <span className="kicker">Whole plan</span>
-          <strong>{formatNumber(stats.sites)} sites</strong>
+          <SiteCount sites={stats.sites} act={stats.act} />
           <span className="metrics">
             <em>{formatNumber(stats.hhs)} HH</em>
             <em className={gapClass(householdGap)}>{formatGap(householdGap)} HH</em>
@@ -44,15 +44,16 @@ export default function PlanBar() {
         </span>
       </div>
 
-      {catalog.areas.map((area) => {
-        const featured = definedAreas.find((item) => item.parent === area.name && item.featured)
+      {catalog.areas.filter((area) => area.name !== "Al-Shati'").map((area) => {
+        const selected = definedAreas.filter((item) => item.parent === area.name && item.featured)
+        const featured = selected.length === 1 ? selected[0] : null
+        const many = selected.length > 1
         const totals = featured ? areaCounts[featured.id] : null
         const bucket = stats.byArea[area.name]
-        const goal = targets.areas[area.name]
-        const people = (totals ? totals.individuals : bucket.individuals) - goal.individuals
-        const households = (totals ? totals.hhs : bucket.hhs) - goal.hhs
         const individuals = totals ? totals.individuals : bucket.individuals
         const hhs = totals ? totals.hhs : bucket.hhs
+        const act = totals ? totals.act : bucket.act
+        const sites = (totals ? totals.verification : bucket.verification) + act
         return (
           <div
             key={area.name}
@@ -64,55 +65,28 @@ export default function PlanBar() {
                 <i style={{ background: area.color }} />
                 {area.neighborhood}
               </span>
-              <strong>{featured ? featured.name : area.name}</strong>
-              {featured ? (
-                <span className="metrics">
-                  <em>{formatNumber(totals.verification)} assessments</em>
-                  <em>{formatNumber(totals.act)} ACT</em>
-                </span>
-              ) : (
-                <span className="metrics">
-                  <em>{formatNumber(bucket.sites)} sites</em>
-                  <em>{formatNumber(bucket.hhs)} HH</em>
-                </span>
-              )}
+              <strong>{featured ? featured.name : many ? `${selected.length} areas` : area.name}</strong>
+              <SiteCount sites={sites} act={act} />
               <span className="metrics">
-                <em>{formatNumber(individuals)}</em>
-                <em className={gapClass(people)}>{formatGap(people)}</em>
+                <em>{formatNumber(individuals)} individuals</em>
               </span>
-              {featured ? (
-                <span className="metrics">
-                  <em>{formatCount(hhs)} HH</em>
-                  <em className={gapClass(households)}>{formatGap(households)} HH</em>
-                </span>
-              ) : null}
-              <span className="track">
-                <span style={{ width: trackWidth(individuals, goal.individuals), background: area.color }} />
+              <span className="metrics">
+                <em>{formatCount(hhs)} HH</em>
               </span>
             </button>
-            <span className="target">
-              <span className="target-edit">
-                {featured ? `${area.name} · ` : ''}
-                Target
-                <TargetInput
-                  value={goal.individuals}
-                  label={`${area.name} target individuals`}
-                  onCommit={(next) => setAreaTarget(area.name, { individuals: next })}
-                />
-                ·
-                <TargetInput
-                  value={goal.hhs}
-                  label={`${area.name} target households`}
-                  onCommit={(next) => setAreaTarget(area.name, { hhs: next })}
-                />
-                HH
-              </span>
-              {featured ? null : <span className={gapClass(households)}>{formatGap(households)} HH</span>}
-            </span>
           </div>
         )
       })}
     </div>
+  )
+}
+
+function SiteCount({ sites, act }) {
+  return (
+    <span className="site-line">
+      <strong>{formatNumber(sites)} sites</strong>
+      <span className="site-act">| {formatNumber(act)} ACT</span>
+    </span>
   )
 }
 

@@ -129,7 +129,7 @@ export function actPopulation(rows) {
   return { hhs, individuals }
 }
 
-export function areaPopulation(verification, act, areaRing, dots) {
+export function areaPopulation(verification, act, areaRing, dots, rings) {
   const seen = new Set()
   const chosen = new Map()
   for (const row of verification) {
@@ -158,11 +158,12 @@ export function areaPopulation(verification, act, areaRing, dots) {
     individuals += people
     ids.forEach((id) => seen.add(id))
   }
-  if (areaRing && dots) {
+  const shapes = Array.isArray(rings) && rings.length ? rings : (areaRing ? [areaRing] : [])
+  if (shapes.length && dots) {
     for (const site of catalog.candidates) {
       const key = normalizeId(site.id)
       if (!key || seen.has(key) || listedAsManaged([site.id]) || listedAsPartner([site.id])) continue
-      if (!dotInside([site.id], areaRing, dots)) continue
+      if (!shapes.some((ring) => dotInside([site.id], ring, dots))) continue
       hhs += amount(site.hhs)
       individuals += amount(site.individuals)
       seen.add(key)
@@ -193,6 +194,38 @@ export function areaContents(areaRing, dots) {
   return {
     verification: verificationRows(areaRing, dots),
     act: actRows(areaRing, dots),
+  }
+}
+
+function rowsInside(rows, idIndexes, rings, dots) {
+  return rows.filter((row) => {
+    const ids = idIndexes.map((index) => row[index])
+    if (listedAsManaged(ids) || listedAsPartner(ids)) return false
+    return rings.some((ring) => dotInside(ids, ring, dots))
+  })
+}
+
+export function combinedAreaCounts(rings, dots) {
+  const shapes = (rings || []).filter((ring) => Array.isArray(ring) && ring.length >= 3)
+  if (!shapes.length) return { verification: 0, act: 0, hhs: 0, individuals: 0 }
+  const verification = rowsInside(
+    registers.verification.rows,
+    [registers.verification.siteId, registers.verification.formSiteId],
+    shapes,
+    dots,
+  )
+  const act = rowsInside(
+    registers.act.rows,
+    [registers.act.siteId, registers.act.newSiteId],
+    shapes,
+    dots,
+  )
+  const population = areaPopulation(verification, act, null, dots, shapes)
+  return {
+    verification: verification.length,
+    act: act.length,
+    hhs: population.hhs,
+    individuals: population.individuals,
   }
 }
 

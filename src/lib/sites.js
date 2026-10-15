@@ -22,6 +22,12 @@ export function siteForExtent(catalog, code) {
   return null
 }
 
+function actIdentity(row) {
+  const siteId = String(row[actColumn['Site ID']] ?? '').trim()
+  const newId = String(row[actColumn['New Site ID']] ?? '').trim()
+  return newId || siteId
+}
+
 export function actRecord(codes) {
   const wanted = new Set(codes.map(normalizeId).filter(Boolean))
   if (!wanted.size) return null
@@ -31,7 +37,7 @@ export function actRecord(codes) {
     return wanted.has(siteId) || (newId && wanted.has(newId))
   })
   if (!row) return null
-  const record = { id: String(row[actColumn['Site ID']]).trim() }
+  const record = { id: actIdentity(row) }
   for (const [name, index] of Object.entries(actColumn)) {
     const value = row[index]
     if (value == null || String(value).trim() === '') continue
@@ -96,7 +102,7 @@ export function extentCenter(...ids) {
 }
 
 export function actMapPoint(site) {
-  const center = extentCenter(site.id, site['New Site ID'])
+  const center = extentCenter(site.id, site['New Site ID'], site['Site ID'])
   if (center) return center
   const lat = Number(site.Latitude)
   const lon = Number(site.Longitude)
@@ -106,7 +112,7 @@ export function actMapPoint(site) {
 
 export function listActSites() {
   return actSheet.rows.flatMap((row) => {
-    const id = String(row[actColumn['Site ID']] ?? '').trim()
+    const id = actIdentity(row)
     if (!id) return []
     const record = { id }
     for (const [name, index] of Object.entries(actColumn)) {

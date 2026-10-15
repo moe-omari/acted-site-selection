@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import catalog from './data/catalog.json'
 import { listedAsPartner, partnerFor, partnerSearchParts, partnerSitesByOthers as partnerSites } from './lib/partners'
-import { areaContents, areaPopulation, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook } from './lib/areas'
+import { areaContents, areaPopulation, combinedAreaCounts, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook } from './lib/areas'
 import { downloadCsv, haversineKm } from './lib/geo'
-import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, usesSheetCoordinate, verificationCandidates } from './lib/sites'
-import { listedAsManaged, managedLayerSites, usesCorrectedCoordinate } from './lib/managed-layer'
+import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, verificationCandidates } from './lib/sites'
+import { listedAsManaged, managedLayerSites } from './lib/managed-layer'
 
 const extentDots = polygonSites(catalog)
 const siteCatalog = {
@@ -15,7 +15,7 @@ const siteCatalog = {
 
 const AREAS_KEY = 'acted-cccm-areas-v1'
 const POSITIONS_KEY = 'acted-site-positions-v1'
-const CENTERED_KEY = 'acted-site-positions-centered-v1'
+const CENTERED_KEY = 'acted-site-positions-centered-v2'
 const AREA_COLORS = ['#c4554d', '#0f7b6c', '#d9730d', '#337ea9', '#9065b0', '#9c27b0', '#b3541e', '#2e7d32']
 const AppState = createContext(null)
 
@@ -35,6 +35,7 @@ for (const site of siteCatalog.candidates) rememberSite(site.id)
 for (const site of siteCatalog.managed) rememberSite(site.id)
 for (const site of actSites) {
   rememberSite(site.id)
+  rememberSite(site['Site ID'])
   rememberSite(site['New Site ID'])
 }
 
@@ -94,7 +95,6 @@ function nearestTarget(ring) {
 function normalizeDefinedAreas(raw) {
   if (!Array.isArray(raw)) return []
   const names = new Set(catalog.areas.map((area) => area.name))
-  const featured = new Set()
   const areas = raw.filter((area) => (
     area
     && typeof area.id === 'string'
@@ -106,15 +106,13 @@ function normalizeDefinedAreas(raw) {
   )).map((area) => {
     const ring = area.ring.map((pair) => [pair[0], pair[1]])
     const parent = names.has(area.parent) ? area.parent : nearestTarget(ring)
-    const showOnCard = area.featured === true && !featured.has(parent)
-    if (showOnCard) featured.add(parent)
     return {
       id: area.id,
       name: area.name,
       color: area.color,
       ring,
       parent,
-      featured: showOnCard,
+      featured: area.featured === true,
       visible: area.visible !== false,
     }
   })
@@ -189,6 +187,7 @@ function actMatches(site, needle, activeArea) {
     site['Site name (Arabic)'],
     site['Alternative name'],
     site.id,
+    site['Site ID'],
     site['New Site ID'],
     site.Neighbourhood,
     site.Governorate,
@@ -261,7 +260,7 @@ export function AppStateProvider({ children }) {
         const colon = key.indexOf(':')
         const type = key.slice(0, colon)
         const id = key.slice(colon + 1)
-        if ((type === 'candidate' || type === 'managed' || type === 'act') && extentCenter(id)) continue
+        if ((type === 'candidate' || type === 'managed' || type === 'act' || type === 'partner') && extentCenter(id)) continue
         next[key] = value
       }
       return next
@@ -397,9 +396,7 @@ export function AppStateProvider({ children }) {
   }, [])
 
   const placed = useCallback((type, id, lat, lon) => {
-    const center = (type === 'candidate' || type === 'managed' || type === 'act')
-      && !usesCorrectedCoordinate(type, id)
-      && !usesSheetCoordinate(type, id)
+    const center = (type === 'candidate' || type === 'managed' || type === 'act' || type === 'partner')
       ? extentCenter(id)
       : null
     const saved = positions[`${type}:${id}`]
@@ -429,8 +426,8 @@ export function AppStateProvider({ children }) {
       const point = actMapPoint(site)
       if (!point) continue
       const here = placed('act', site.id, point.lat, point.lon)
-      addSiteDot(dots, site.id, here)
-      addSiteDot(dots, site['New Site ID'], here)
+      const keys = new Set([site.id, site['Site ID'], site['New Site ID']].map(normalizeId).filter(Boolean))
+      for (const key of keys) addSiteDot(dots, key, here)
     }
     for (const dot of barePolygonDots(siteCatalog)) {
       addSiteDot(dots, dot.id, placed(dot.type, dot.key, dot.lat, dot.lon))
@@ -456,52 +453,32 @@ export function AppStateProvider({ children }) {
   }, [definedAreas, siteDots])
 
   const stats = useMemo(() => {
-    const byArea = Object.fromEntries(
-      catalog.areas.map((area) => [area.name, { sites: 0, hhs: 0, individuals: 0, radiusKm: 0 }]),
-    )
-    const seen = new Set()
-    let sites = 0
-    let hhs = 0
-    let individuals = 0
-    for (const area of definedAreas) {
-      if (!area.featured) continue
+    const featured = definedAreas.filter((area) => area.featured)
+    const totals = combinedAreaCounts(featured.map((area) => area.ring), siteDots)
+    const byArea = Object.fromEntries(catalog.areas.map((area) => {
+      const group = featured.filter((item) => item.parent === area.name)
+      const counts = combinedAreaCounts(group.map((item) => item.ring), siteDots)
+      return [area.name, { ...counts, sites: counts.verification + counts.act, radiusKm: 0 }]
+    }))
+    for (const area of featured) {
       const bucket = byArea[area.parent]
       const anchor = areaByName[area.parent]
+      if (!bucket || !anchor) continue
       for (const site of siteCatalog.candidates) {
         if (listedAsManaged([site.id]) || listedAsPartner([site.id])) continue
-        const here = placed('candidate', site.id, site.lat, site.lon)
         if (!dotInside([site.id], area.ring, siteDots)) continue
-        if (bucket) {
-          bucket.sites += 1
-          bucket.hhs += site.hhs
-          bucket.individuals += site.individuals
-          if (anchor) bucket.radiusKm = Math.max(bucket.radiusKm, haversineKm(here.lat, here.lon, anchor.lat, anchor.lon))
-        }
-        if (seen.has(`candidate:${site.id}`)) continue
-        seen.add(`candidate:${site.id}`)
-        sites += 1
-        hhs += site.hhs
-        individuals += site.individuals
-      }
-      for (const site of actSites) {
-        const keys = [site.id, site['New Site ID']].filter(Boolean)
-        if (listedAsManaged(keys) || listedAsPartner(keys)) continue
-        if (!dotInside(keys, area.ring, siteDots)) continue
-        const households = actAmount(site, 'Households')
-        const people = actAmount(site, 'Individuals')
-        if (bucket) {
-          bucket.sites += 1
-          bucket.hhs += households
-          bucket.individuals += people
-        }
-        if (seen.has(`act:${site.id}`)) continue
-        seen.add(`act:${site.id}`)
-        sites += 1
-        hhs += households
-        individuals += people
+        const here = placed('candidate', site.id, site.lat, site.lon)
+        bucket.radiusKm = Math.max(bucket.radiusKm, haversineKm(here.lat, here.lon, anchor.lat, anchor.lon))
       }
     }
-    return { sites, hhs, individuals, byArea }
+    return {
+      sites: totals.verification + totals.act,
+      verification: totals.verification,
+      act: totals.act,
+      hhs: totals.hhs,
+      individuals: totals.individuals,
+      byArea,
+    }
   }, [areaByName, definedAreas, placed, siteDots])
 
   const overlaps = useMemo(() => {
@@ -796,6 +773,7 @@ export function AppStateProvider({ children }) {
       const removed = current.find((area) => area.id === id)
       const next = current.filter((area) => area.id !== id)
       if (!removed?.featured) return next
+      if (next.some((area) => area.parent === removed.parent && area.featured)) return next
       const replacement = next.find((area) => area.parent === removed.parent)
       if (!replacement) return next
       return next.map((area) => (area.id === replacement.id ? { ...area, featured: true } : area))
@@ -806,11 +784,11 @@ export function AppStateProvider({ children }) {
   const featureArea = useCallback((id) => {
     changeDefinedAreas((current) => {
       const area = current.find((item) => item.id === id)
-      if (!area || area.featured) return current
-      return current.map((item) => {
-        if (item.parent !== area.parent) return item
-        return { ...item, featured: item.id === id }
-      })
+      if (!area) return current
+      if (!area.featured) return current.map((item) => (item.id === id ? { ...item, featured: true } : item))
+      const others = current.some((item) => item.parent === area.parent && item.id !== id && item.featured)
+      if (!others) return current
+      return current.map((item) => (item.id === id ? { ...item, featured: false } : item))
     })
   }, [])
 

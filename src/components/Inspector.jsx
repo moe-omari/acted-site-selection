@@ -279,6 +279,7 @@ export default function Inspector() {
           {ACT_FIELDS.map(([key, label]) => {
             const value = site[key]
             if (value == null || String(value).trim() === '') return null
+            if (key === 'New Site ID' && String(value).trim().toUpperCase() === site.id.toUpperCase()) return null
             const text = key === 'Households' || key === 'Individuals' ? formatNumber(Number(value)) : value
             return <Row key={key} label={label}>{text}</Row>
           })}
