@@ -983,6 +983,7 @@ button { cursor: pointer; }
 
 .legend-fill { background: #337ea9; border-radius: 99px; box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px #337ea9; }
 .legend-hollow { background: #fff; border: 1.5px solid #9b9a97; border-radius: 99px; }
+.legend-inactive { background: #e03131; border-radius: 99px; }
 .legend-managed { background: var(--green); border-radius: 99px; }
 .legend-partner { background: #0e7490; border-radius: 2px; }
 .legend-crc { background: var(--orange); border-radius: 2px; transform: rotate(45deg); }
@@ -992,6 +993,7 @@ button { cursor: pointer; }
 .legend-extent { background: rgba(57, 73, 171, 0.28); border: 1.5px solid #3949ab; border-radius: 2px; }
 .legend-unlinked-extent { background: rgba(196, 85, 77, 0.22); border: 1.5px dashed #c4554d; border-radius: 2px; }
 .legend-act { background: #3949ab; border: 1.5px solid #fff; border-radius: 99px; box-shadow: 0 0 0 1px #3949ab; }
+.legend-inactive { background: #e03131; border-radius: 99px; }
 .legend-managed-extent { background: rgba(60, 162, 230, 0.28); border: 1.5px solid #3ca2e6; border-radius: 2px; }
 
 .map-credit {

@@ -19,11 +19,17 @@ import managedSiteExtents from '../data/managed-extents.json'
 import neighborhoods from '../data/neighborhoods.json'
 import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
 import { ziteManagedSites, ziteUnmanagedSites } from '../lib/zite'
-import { siteForExtent, actRecord, actMapSites, barePolygonDots, linkedSiteLayer, orphanExtentDots, unlinkedExtents } from '../lib/sites'
+import { siteForExtent, actRecord, actMapSites, barePolygonDots, linkedSiteLayer, listActSites, orphanExtentDots, unlinkedExtents } from '../lib/sites'
 import { useAppState } from '../state'
 import { neighborhoodFrame, pointInNeighborhood } from '../lib/areas'
 import { haversineKm } from '../lib/geo'
 import { formatCount, formatKm, formatNumber } from '../lib/format'
+
+const INACTIVE_COLOR = '#e03131'
+
+function isInactiveStatus(value) {
+  return String(value ?? '').trim().toLowerCase().startsWith('inactive')
+}
 
 const iconCache = new Map()
 
@@ -368,6 +374,23 @@ export default function MapView() {
     ...taggedExtents(managedSiteExtents.features, 'partner', 'managed'),
   ]), [])
   const hoverKey = hover ? `${hover.type}:${hover.id}` : ''
+  const inactiveIds = useMemo(() => {
+    const ids = new Set()
+    const add = (id, status) => {
+      const key = String(id ?? '').trim().toUpperCase()
+      if (key && isInactiveStatus(status)) ids.add(key)
+    }
+    for (const site of catalog.candidates) add(site.id, site.status)
+    for (const site of ziteUnmanagedSites) add(site.id, site.status)
+    for (const site of ziteManagedSites) add(site.id, site.status)
+    for (const site of partnerSites) {
+      add(site.id, site.status)
+      add(site.key, site.status)
+    }
+    for (const site of listActSites()) add(site.id, site['Site status'])
+    return ids
+  }, [catalog])
+  const dotColor = (id, color) => (inactiveIds.has(String(id ?? '').trim().toUpperCase()) ? INACTIVE_COLOR : color)
 
   const visibleCandidates = catalog.candidates.filter((site) => candidateVisible(site, layers, plan, areaFilter, locateCandidate))
   const renderedCandidateIds = new Set(visibleCandidates.map((site) => site.id))
@@ -733,7 +756,7 @@ export default function MapView() {
             id={dot.id}
             lat={dot.lat}
             lon={dot.lon}
-            color="#3ca2e6"
+            color={dotColor(dot.id, '#3ca2e6')}
             filled
             active={isActive('managedExtent', dot.id, focusKey, hoverKey)}
             title={dot.name}
@@ -751,7 +774,7 @@ export default function MapView() {
               id={site.id}
               lat={here.lat}
               lon={here.lon}
-              color="#3ca2e6"
+              color={dotColor(site.id, '#3ca2e6')}
               filled
               active={isActive('unmanaged', site.id, focusKey, hoverKey)}
               title={site.name || site.id}
@@ -770,7 +793,7 @@ export default function MapView() {
               id={site.key}
               lat={here.lat}
               lon={here.lon}
-              color="#0e7490"
+              color={dotColor(site.key, '#0e7490')}
               filled
               shape="square"
               active={isActive('partner', site.key, focusKey, hoverKey)}
@@ -800,7 +823,7 @@ export default function MapView() {
                 id={site.id}
                 lat={here.lat}
                 lon={here.lon}
-                color="#0f7b6c"
+                color={dotColor(site.id, '#0f7b6c')}
                 filled
                 active={isActive('managed', site.id, focusKey, hoverKey)}
                 title={partner ? `${site.name} · ${partner}` : site.name}
@@ -827,7 +850,7 @@ export default function MapView() {
                 id={site.id}
                 lat={here.lat}
                 lon={here.lon}
-                color="#0f7b6c"
+                color={dotColor(site.id, '#0f7b6c')}
                 filled
                 active={isActive('managed', site.id, focusKey, hoverKey)}
                 title={site.name || site.id}
@@ -848,7 +871,7 @@ export default function MapView() {
               id={site.id}
               lat={here.lat}
               lon={here.lon}
-              color={color}
+              color={dotColor(site.id, color)}
               filled={plan.has(site.id)}
               active={isActive('candidate', site.id, focusKey, hoverKey)}
               title={partner ? `${site.name} · ${partner}` : site.name}
@@ -878,7 +901,7 @@ export default function MapView() {
                 id={site.id}
                 lat={here.lat}
                 lon={here.lon}
-                color="#3949ab"
+                color={dotColor(site.id, '#3949ab')}
                 filled={plan.has(site.id)}
                 active={isActive('act', site.id, focusKey, hoverKey)}
                 title={partner ? `${site.name} · ${partner}` : site.name}
@@ -919,7 +942,7 @@ export default function MapView() {
               positionId={dot.key}
               lat={here.lat}
               lon={here.lon}
-              color={color}
+              color={dotColor(dot.id, color)}
               filled={dot.type === 'managed' || plan.has(dot.id)}
               active={isActive(dot.type, dot.id, focusKey, hoverKey)}
               title={candidate?.name || dot.name}
@@ -1016,6 +1039,7 @@ export default function MapView() {
         <span><i className="legend-managed" /> Managed</span>
         <span><i className="legend-partner" /> Managed by partners</span>
         <span><i className="legend-act" /> ACT</span>
+        <span><i className="legend-inactive" /> Inactive</span>
         <span><i className="legend-crc" /> CRC</span>
         <span><i className="legend-aisha" /> Aisha</span>
         <span><i className="legend-neighborhood" /> Neighborhoods</span>
