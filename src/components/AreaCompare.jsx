@@ -5,6 +5,7 @@ import { useAppState } from '../state'
 export default function AreaCompare() {
   const { compareTarget, setCompareTarget, definedAreas, catalog, siteDots } = useAppState()
   const target = catalog.areas.find((area) => area.name === compareTarget)
+    || (compareTarget ? { name: compareTarget, neighborhood: compareTarget } : null)
   const areas = definedAreas.filter((area) => area.parent === compareTarget)
   if (!target || areas.length < 2) return null
   const report = compareAreas(areas, siteDots)

@@ -174,7 +174,6 @@ MANUAL_EXTENT_LINKS = {
     "KYS1605": ("KYS5715", "Dream Plus"),
     "RFH4985": ("ACT1403", "Ajyal 2"),
     "Ajyal 2": ("ACT1403", "Ajyal 2"),
-    "زهرة المدائن": ("ACT103", "Zahrat Al-Madaen"),
     "alhabasha": ("KYS5319", "Al Habsha"),
     "ACT3004": ("KYS5319", "Al Habsha"),
     "al zaytona": ("KYS5593", "Al-Zaitona"),
@@ -182,6 +181,7 @@ MANUAL_EXTENT_LINKS = {
     "alhorrya 2": ("KYS5320", "Al-Hurriya 2"),
     "ACT3003": ("KYS5320", "Al-Hurriya 2"),
     "Al-Taawun2": ("KYS5803", "Al-Taawun2"),
+    "ACT1110": ("KYS5812", "Qatrat Ghaith"),
 }
 
 SWEEP_CODES = {
@@ -196,6 +196,7 @@ SWEEP_CODES = {
     "ACT1402": "KYS5747",
     "ACT1603": "KYS5724",
     "ACT1604": "KYS5725",
+    "ACT1110": "KYS5812",
 }
 
 MANUAL_ACT_CODES = {

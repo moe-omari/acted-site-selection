@@ -3,9 +3,9 @@ import catalog from '../data/catalog.json'
 import neighborhoods from '../data/neighborhoods.json'
 import registers from '../data/registers.json'
 import { listedAsPartner } from './partners'
-import { downloadJson, pointInRing } from './geo'
+import { downloadJson, pointInRing, ringCentroid } from './geo'
 import { listedAsManaged } from './managed-layer'
-import { extentCenter, verificationCandidates, verificationPopulation } from './sites'
+import { extentCenter, isOfficialSiteId, promotedActSites, verificationCandidates, verificationPopulation } from './sites'
 
 function normalizeId(id) {
   if (id == null) return ''
@@ -58,6 +58,107 @@ const neighborhoodPlaces = neighborhoods.features.map((feature) => ({
   name: decodeName(feature.properties?.name),
   geometry: feature.geometry,
 }))
+
+const neighborhoodNames = new Set(neighborhoodPlaces.map((place) => place.name).filter(Boolean))
+
+const catalogParentByName = new Map()
+for (const area of catalog.areas) {
+  catalogParentByName.set(area.name.trim().toLowerCase(), area.name)
+  catalogParentByName.set(area.neighborhood.trim().toLowerCase(), area.name)
+}
+catalogParentByName.set('an naser', 'Al-Naser')
+
+const extraGroupColors = ['#c4554d', '#0f7b6c', '#9c27b0', '#b3541e', '#2e7d32', '#5c5b57']
+
+export function isKnownAreaParent(name) {
+  const text = String(name || '').trim()
+  if (!text) return false
+  if (catalog.areas.some((area) => area.name === text)) return true
+  return neighborhoodNames.has(text)
+}
+
+function catalogParent(name) {
+  return catalogParentByName.get(String(name || '').trim().toLowerCase()) || ''
+}
+
+function scoreNeighborhood(counts, lat, lon, weight) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
+  for (const place of neighborhoodPlaces) {
+    if (!place.name || !geometryContains(lat, lon, place.geometry)) continue
+    counts.set(place.name, (counts.get(place.name) || 0) + weight)
+  }
+}
+
+export function parentForRing(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return ''
+  const counts = new Map()
+  for (const pair of ring) scoreNeighborhood(counts, Number(pair[1]), Number(pair[0]), 1)
+  const center = ringCentroid(ring)
+  if (center) scoreNeighborhood(counts, center.lat, center.lon, ring.length)
+  let best = ''
+  let bestCount = 0
+  for (const [name, count] of counts) {
+    if (count > bestCount) {
+      best = name
+      bestCount = count
+    }
+  }
+  if (!best) return ''
+  return catalogParent(best) || best
+}
+
+export function pointInNeighborhood(lat, lon, name) {
+  const wanted = String(name || '').trim()
+  if (!wanted || !Number.isFinite(lat) || !Number.isFinite(lon)) return false
+  return neighborhoodPlaces.some((place) => place.name === wanted && geometryContains(lat, lon, place.geometry))
+}
+
+export function neighborhoodFrame(name) {
+  const wanted = String(name || '').trim()
+  const place = neighborhoodPlaces.find((item) => item.name === wanted)
+  if (!place?.geometry) return null
+  const polygons = place.geometry.type === 'Polygon'
+    ? [place.geometry.coordinates]
+    : place.geometry.type === 'MultiPolygon'
+      ? place.geometry.coordinates || []
+      : []
+  let minLat = Infinity
+  let maxLat = -Infinity
+  let minLon = Infinity
+  let maxLon = -Infinity
+  for (const polygon of polygons) {
+    for (const pair of polygon?.[0] || []) {
+      const lon = Number(pair[0])
+      const lat = Number(pair[1])
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
+      minLat = Math.min(minLat, lat)
+      maxLat = Math.max(maxLat, lat)
+      minLon = Math.min(minLon, lon)
+      maxLon = Math.max(maxLon, lon)
+    }
+  }
+  if (!Number.isFinite(minLat)) return null
+  return {
+    name: wanted,
+    lat: (minLat + maxLat) / 2,
+    lon: (minLon + maxLon) / 2,
+    points: [
+      { lat: minLat, lon: minLon },
+      { lat: minLat, lon: maxLon },
+      { lat: maxLat, lon: minLon },
+      { lat: maxLat, lon: maxLon },
+    ],
+  }
+}
+
+export function colorForAreaGroup(name) {
+  const match = catalog.areas.find((area) => area.name === name)
+  if (match) return match.color
+  let hash = 0
+  const text = String(name || '')
+  for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) >>> 0
+  return extraGroupColors[hash % extraGroupColors.length]
+}
 
 function mapNeighborhood(lat, lon) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ''
@@ -162,6 +263,16 @@ export function areaPopulation(verification, act, areaRing, dots, rings) {
       seen.add(key)
     }
   }
+  for (const site of promotedActSites(catalog.areas)) {
+    const key = normalizeId(site.id)
+    const former = normalizeId(site.formerActId)
+    if (!key || seen.has(key) || (former && seen.has(former))) continue
+    if (!shapes.some((ring) => dotInside([site.id, site.formerActId], ring, dots))) continue
+    hhs += amount(site.hhs)
+    individuals += amount(site.individuals)
+    seen.add(key)
+    if (former) seen.add(former)
+  }
   return { hhs, individuals }
 }
 
@@ -177,6 +288,7 @@ export function verificationRows(areaRing, dots) {
 export function actRows(areaRing, dots) {
   const sheet = registers.act
   return sheet.rows.filter((row) => {
+    if (isOfficialSiteId(row[sheet.newSiteId])) return false
     const ids = [row[sheet.siteId], row[sheet.newSiteId]]
     if (listedAsManaged(ids) || listedAsPartner(ids)) return false
     return dotInside(ids, areaRing, dots)
@@ -198,9 +310,27 @@ function rowsInside(rows, idIndexes, rings, dots) {
   })
 }
 
-export function combinedAreaCounts(rings, dots) {
+export function noSmaInside(rings, sites) {
   const shapes = (rings || []).filter((ring) => Array.isArray(ring) && ring.length >= 3)
-  if (!shapes.length) return { verification: 0, act: 0, hhs: 0, individuals: 0 }
+  if (!shapes.length || !sites) return []
+  const seen = new Set()
+  const inside = []
+  for (const site of sites) {
+    const id = normalizeId(site.id)
+    if (!id || seen.has(id)) continue
+    const lat = Number(site.lat)
+    const lon = Number(site.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
+    if (!shapes.some((ring) => pointInRing(lat, lon, ring))) continue
+    seen.add(id)
+    inside.push(site)
+  }
+  return inside
+}
+
+export function combinedAreaCounts(rings, dots, noSmaSites) {
+  const shapes = (rings || []).filter((ring) => Array.isArray(ring) && ring.length >= 3)
+  if (!shapes.length) return { verification: 0, act: 0, noSma: 0, hhs: 0, individuals: 0 }
   const verification = rowsInside(
     registers.verification.rows,
     [registers.verification.siteId, registers.verification.formSiteId],
@@ -208,17 +338,43 @@ export function combinedAreaCounts(rings, dots) {
     dots,
   )
   const act = rowsInside(
-    registers.act.rows,
+    registers.act.rows.filter((row) => !isOfficialSiteId(row[registers.act.newSiteId])),
     [registers.act.siteId, registers.act.newSiteId],
     shapes,
     dots,
   )
   const population = areaPopulation(verification, act, null, dots, shapes)
+  const counted = new Set()
+  for (const row of verification) {
+    for (const id of rowIds(row, [registers.verification.siteId, registers.verification.formSiteId])) counted.add(id)
+  }
+  const promoted = promotedActSites(catalog.areas).filter((site) => {
+    const key = normalizeId(site.id)
+    const former = normalizeId(site.formerActId)
+    if (!key || counted.has(key) || (former && counted.has(former))) return false
+    return shapes.some((ring) => dotInside([site.id, site.formerActId], ring, dots))
+  })
+  const noSma = noSmaInside(shapes, noSmaSites)
+  const alreadyCounted = new Set()
+  for (const row of verification) {
+    for (const id of rowIds(row, [registers.verification.siteId, registers.verification.formSiteId])) alreadyCounted.add(id)
+  }
+  for (const row of act) {
+    for (const id of rowIds(row, [registers.act.siteId, registers.act.newSiteId])) alreadyCounted.add(id)
+  }
+  let noSmaHouseholds = 0
+  let noSmaIndividuals = 0
+  for (const site of noSma) {
+    if (alreadyCounted.has(normalizeId(site.id))) continue
+    noSmaHouseholds += amount(site.households)
+    noSmaIndividuals += amount(site.individuals)
+  }
   return {
-    verification: verification.length,
+    verification: verification.length + promoted.length,
     act: act.length,
-    hhs: population.hhs,
-    individuals: population.individuals,
+    noSma: noSma.length,
+    hhs: population.hhs + noSmaHouseholds,
+    individuals: population.individuals + noSmaIndividuals,
   }
 }
 
@@ -250,9 +406,69 @@ function closedRing(ring) {
   return points
 }
 
-export function downloadAreaWorkbook(name, areaRing, dots) {
+function populationCell(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const number = Number(value.replace(/,/g, ''))
+    return Number.isFinite(number) ? number : ''
+  }
+  return ''
+}
+
+function drawnAreaFields(lat, lon, definedAreas) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ['', '']
+  const inside = (definedAreas || []).filter((area) => area?.ring && pointInRing(lat, lon, area.ring))
+  const targeted = [...new Set(inside.map((area) => area.parent).filter(Boolean))]
+  const names = inside.map((area) => area.name).filter(Boolean)
+  return [targeted.join('; '), names.join('; ')]
+}
+
+const noSmaHeaders = [
+  'Targeted area',
+  'Drawn area',
+  'Map neighborhood',
+  'Dot latitude',
+  'Dot longitude',
+  'Site ID',
+  'Site name',
+  'Site name (Arabic)',
+  'Neighborhood',
+  'Governorate',
+  'Status',
+  'Partner',
+  'Households',
+  'Individuals',
+]
+
+function noSmaSheetRows(sites, definedAreas) {
+  return [...(sites || [])]
+    .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
+    .map((site) => {
+      const lat = Number(site.lat)
+      const lon = Number(site.lon)
+      const [targeted, drawn] = drawnAreaFields(lat, lon, definedAreas)
+      return [
+        targeted,
+        drawn,
+        mapNeighborhood(lat, lon),
+        Number.isFinite(lat) ? lat : '',
+        Number.isFinite(lon) ? lon : '',
+        site.id || '',
+        site.name || '',
+        site.nameAr || '',
+        site.neighborhood || '',
+        site.governorate || '',
+        site.status || '',
+        site.partner || 'No SMA',
+        populationCell(site.households),
+        populationCell(site.individuals),
+      ]
+    })
+}
+
+export function downloadAreaWorkbook(name, areaRing, dots, noSmaSites, definedAreas) {
   const contents = areaContents(areaRing, dots)
-  const population = areaPopulation(contents.verification, contents.act, areaRing, dots)
+  const counts = combinedAreaCounts([areaRing], dots, noSmaSites)
   const verification = registers.verification
   const act = registers.act
   const verificationRows = contents.verification.map((row) => {
@@ -263,15 +479,17 @@ export function downloadAreaWorkbook(name, areaRing, dots) {
     const ids = [row[act.siteId], row[act.newSiteId]]
     return [neighborhoodField(ids, dots), ...dotCoordinate(ids, dots), ...row]
   })
+  const noSmaRows = noSmaSheetRows(noSmaInside([areaRing], noSmaSites), definedAreas)
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(
     book,
     XLSX.utils.aoa_to_sheet([
       ['Area', name],
-      ['Sites', contents.verification.length],
-      ['ACT sites', contents.act.length],
-      ['Households', population.hhs],
-      ['Individuals', population.individuals],
+      ['Sites', counts.verification],
+      ['ACT sites', counts.act],
+      ['No SMA', counts.noSma],
+      ['Households', counts.hhs],
+      ['Individuals', counts.individuals],
     ]),
     'Area',
   )
@@ -285,9 +503,14 @@ export function downloadAreaWorkbook(name, areaRing, dots) {
     XLSX.utils.aoa_to_sheet([['Map neighborhood', 'Dot latitude', 'Dot longitude', ...act.headers], ...actRows]),
     'ACT sites',
   )
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.aoa_to_sheet([noSmaHeaders, ...noSmaRows]),
+    'No SMA',
+  )
   const safe = String(name || 'area').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'area'
   XLSX.writeFile(book, `${safe}.xlsx`)
-  return { verification: contents.verification.length, act: contents.act.length }
+  return { verification: counts.verification, act: counts.act, noSma: counts.noSma }
 }
 
 function targetFromPlace(place) {
@@ -336,7 +559,7 @@ function areaFields(ids, definedAreas, point, assessedById, placeName, dots) {
   return ['', '']
 }
 
-export function downloadAllSitesWorkbook(definedAreas = [], dots) {
+export function downloadAllSitesWorkbook(definedAreas = [], dots, noSmaSites) {
   const assessedById = new Map(verificationCandidates(catalog).map((site) => [normalizeId(site.id), site]))
   const verification = registers.verification
   const act = registers.act
@@ -362,11 +585,17 @@ export function downloadAllSitesWorkbook(definedAreas = [], dots) {
     XLSX.utils.aoa_to_sheet([['Targeted area', 'Drawn area', 'Map neighborhood', 'Dot latitude', 'Dot longitude', ...verification.headers], ...verificationRows]),
     'Site verification',
   )
+  const noSmaRows = noSmaSheetRows(noSmaSites, definedAreas)
   XLSX.utils.book_append_sheet(
     book,
     XLSX.utils.aoa_to_sheet([['Targeted area', 'Drawn area', 'Map neighborhood', 'Dot latitude', 'Dot longitude', ...act.headers], ...actRows]),
     'ACT sites',
   )
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.aoa_to_sheet([noSmaHeaders, ...noSmaRows]),
+    'No SMA',
+  )
   XLSX.writeFile(book, 'site-verification-and-act-sites.xlsx')
-  return { verification: verificationRows.length, act: actRows.length }
+  return { verification: verificationRows.length, act: actRows.length, noSma: noSmaRows.length }
 }

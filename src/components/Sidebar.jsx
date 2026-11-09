@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppState } from '../state'
+import { parentForRing } from '../lib/areas'
 import { formatCount, formatNumber } from '../lib/format'
 
 const SCOPES = [
@@ -52,7 +53,7 @@ export default function Sidebar() {
     setScope,
     areaFilter,
     selectArea,
-    catalog,
+    areaGroups,
     layers,
     toggleLayer,
     rows,
@@ -95,6 +96,9 @@ export default function Sidebar() {
   const [layersHeight, setLayersHeight] = useState(() => readSavedHeight(LAYERS_HEIGHT_KEY))
   const [listHeight, setListHeight] = useState(() => readSavedHeight(LIST_HEIGHT_KEY))
   const [colorId, setColorId] = useState(null)
+  const tracedParent = draft && draft.length >= 3
+    ? parentForRing(draft.map(([lat, lon]) => [lon, lat]))
+    : ''
 
   useEffect(() => {
     if (!colorId) return undefined
@@ -199,7 +203,7 @@ export default function Sidebar() {
         >
           All areas
         </button>
-        {catalog.areas.map((area) => (
+        {areaGroups.map((area) => (
           <button
             key={area.name}
             type="button"
@@ -259,11 +263,28 @@ export default function Sidebar() {
             <div className="area-block-head">
               <span>Areas</span>
               <span className="area-draw-actions">
+                {draft && !drawingParent ? (
+                  <>
+                    <button type="button" className="text-btn" onClick={finishDraw} disabled={draft.length < 3}>Finish</button>
+                    <button type="button" className="text-btn" onClick={cancelDraw}>Cancel</button>
+                  </>
+                ) : (
+                  <button type="button" className="text-btn" onClick={() => startDraw(null)} disabled={Boolean(draft) || Boolean(editingId)}>Add area</button>
+                )}
                 <button type="button" className="text-btn" title="Download every drawn area boundary as GeoJSON" onClick={exportBoundaries}>Export boundaries</button>
-                <button type="button" className="text-btn" title="Download every site verification assessment and every ACT site, with the map neighborhood, area, and dot coordinate for each one" onClick={exportApproved}>Export sites</button>
+                <button type="button" className="text-btn" title="Download every site verification assessment, every ACT site, and every No SMA site, with the map neighborhood, area, and dot coordinate for each one" onClick={exportApproved}>Export sites</button>
               </span>
             </div>
-            {catalog.areas.map((target) => {
+            {draft && !drawingParent ? (
+              <p className="area-hint">
+                {draft.length < 3
+                  ? 'Click the map to trace it. Double-click to close it. Its neighborhood is added to this list.'
+                  : tracedParent
+                    ? `This outline is in ${tracedParent}. Finish to add that neighborhood to the list.`
+                    : 'This outline is outside the mapped neighborhoods. Finish to list it as Outside.'}
+              </p>
+            ) : null}
+            {areaGroups.map((target) => {
               const children = definedAreas.filter((area) => area.parent === target.name)
               const drawing = Boolean(draft) && drawingParent === target.name
               const editingChild = children.some((area) => area.id === editingId)
@@ -290,7 +311,9 @@ export default function Sidebar() {
                     <p className="area-hint">
                       {draft.length < 3
                         ? 'Click the map to trace it. Double-click to close it.'
-                        : `${draftCounts.verification} ${draftCounts.verification === 1 ? 'site' : 'sites'} · ${draftCounts.act} ACT sites · ${formatCount(draftCounts.hhs)} HH · ${formatNumber(draftCounts.individuals)} individuals inside this outline.`}
+                        : tracedParent && tracedParent !== target.name
+                          ? `This outline is in ${tracedParent}. It will be listed there when you finish.`
+                          : `${draftCounts.verification} ${draftCounts.verification === 1 ? 'site' : 'sites'} · ${draftCounts.act} ACT sites · ${draftCounts.noSma} No SMA · ${formatCount(draftCounts.hhs)} HH · ${formatNumber(draftCounts.individuals)} individuals inside this outline.`}
                     </p>
                   ) : null}
                   {!drawing && editingChild ? (
@@ -299,7 +322,7 @@ export default function Sidebar() {
                   {children.length === 0 ? <p className="area-empty">No areas under {target.name} yet.</p> : null}
                   {children.map((area) => {
                     const editing = editingId === area.id
-                    const totals = (editing ? editCounts : null) ?? areaCounts[area.id] ?? { verification: 0, act: 0, hhs: 0, individuals: 0 }
+                    const totals = (editing ? editCounts : null) ?? areaCounts[area.id] ?? { verification: 0, act: 0, noSma: 0, hhs: 0, individuals: 0 }
                     return (
                       <div key={area.id} className={editing ? 'area-row is-editing' : 'area-row'}>
                         <div className="area-title">
@@ -376,7 +399,7 @@ export default function Sidebar() {
                           <button type="button" aria-label={`Remove ${area.name}`} onClick={() => deleteArea(area.id)}>Remove</button>
                         </span>
                         <button type="button" className="area-meta" onClick={() => openArea(area.id)}>
-                          {totals.verification} {totals.verification === 1 ? 'site' : 'sites'} · {totals.act} ACT sites · {formatCount(totals.hhs)} HH · {formatNumber(totals.individuals)} individuals
+                          {totals.verification} {totals.verification === 1 ? 'site' : 'sites'} · {totals.act} ACT sites · {totals.noSma} No SMA · {formatCount(totals.hhs)} HH · {formatNumber(totals.individuals)} individuals
                         </button>
                       </div>
                     )

@@ -1,15 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import catalog from './data/catalog.json'
 import { listedAsPartner, partnerFor, partnerSearchParts, partnerSitesByOthers as partnerSites } from './lib/partners'
-import { areaContents, areaPopulation, combinedAreaCounts, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook } from './lib/areas'
-import { downloadCsv, haversineKm } from './lib/geo'
-import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, verificationCandidates } from './lib/sites'
+import { colorForAreaGroup, combinedAreaCounts, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook, isKnownAreaParent, noSmaInside, parentForRing, pointInNeighborhood } from './lib/areas'
+import { downloadCsv, haversineKm, pointInRing } from './lib/geo'
+import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, promotedActSites, verificationCandidates } from './lib/sites'
 import { listedAsManaged, managedLayerSites } from './lib/managed-layer'
+import { ziteManagedSites, ziteUnmanagedSites } from './lib/zite'
 
 const extentDots = polygonSites(catalog)
 const siteCatalog = {
   ...catalog,
-  candidates: [...verificationCandidates(catalog), ...extentDots.candidates].filter((site) => !partnerFor(site.id)),
+  candidates: [...verificationCandidates(catalog), ...promotedActSites(catalog.areas), ...extentDots.candidates].filter((site) => !partnerFor(site.id)),
   managed: managedLayerSites(catalog.managed),
 }
 
@@ -31,7 +32,10 @@ function rememberSite(id) {
   const key = normalizeId(id)
   if (key) sitesAlreadyOnMap.add(key)
 }
-for (const site of siteCatalog.candidates) rememberSite(site.id)
+for (const site of siteCatalog.candidates) {
+  rememberSite(site.id)
+  rememberSite(site.formerActId)
+}
 for (const site of siteCatalog.managed) rememberSite(site.id)
 for (const site of actSites) {
   rememberSite(site.id)
@@ -51,15 +55,8 @@ function addSiteDot(dots, id, point) {
   else dots.set(key, [point])
 }
 
-function countsFor(ring, dots) {
-  const contents = areaContents(ring, dots)
-  const population = areaPopulation(contents.verification, contents.act, ring, dots)
-  return {
-    verification: contents.verification.length,
-    act: contents.act.length,
-    hhs: population.hhs,
-    individuals: population.individuals,
-  }
+function countsFor(ring, dots, noSmaSites) {
+  return combinedAreaCounts([ring], dots, noSmaSites)
 }
 
 function loadPositions() {
@@ -94,7 +91,6 @@ function nearestTarget(ring) {
 
 function normalizeDefinedAreas(raw) {
   if (!Array.isArray(raw)) return []
-  const names = new Set(catalog.areas.map((area) => area.name))
   const areas = raw.filter((area) => (
     area
     && typeof area.id === 'string'
@@ -105,7 +101,8 @@ function normalizeDefinedAreas(raw) {
     && area.ring.every((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
   )).map((area) => {
     const ring = area.ring.map((pair) => [pair[0], pair[1]])
-    const parent = names.has(area.parent) ? area.parent : nearestTarget(ring)
+    const saved = typeof area.parent === 'string' ? area.parent.trim() : ''
+    const parent = isKnownAreaParent(saved) ? saved : (parentForRing(ring) || saved || nearestTarget(ring))
     return {
       id: area.id,
       name: area.name,
@@ -178,6 +175,22 @@ function actAreaName(site) {
   if (!place) return ''
   const area = catalog.areas.find((item) => item.neighborhood.toLowerCase() === place || item.name.toLowerCase() === place)
   return area?.name || ''
+}
+
+function actInNeighborhood(site, name, placed) {
+  if (!name) return true
+  const point = actMapPoint(site)
+  if (!point) return false
+  const here = placed('act', site.id, point.lat, point.lon)
+  return pointInNeighborhood(here.lat, here.lon, name)
+}
+
+function managedInFocus(site, activeArea, neighborhoodName, placed) {
+  const here = placed('managed', site.id, site.lat, site.lon)
+  if (neighborhoodName) return pointInNeighborhood(here.lat, here.lon, neighborhoodName)
+  if (!activeArea) return true
+  const named = site.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
+  return named || haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
 }
 
 function actMatches(site, needle, activeArea) {
@@ -435,6 +448,23 @@ export function AppStateProvider({ children }) {
     return dots
   }, [placed])
 
+  const noSmaSites = useMemo(() => ziteUnmanagedSites.map((site) => {
+    const here = placed('unmanaged', site.id, site.lat, site.lon)
+    return {
+      id: site.id,
+      lat: here.lat,
+      lon: here.lon,
+      name: site.name,
+      nameAr: site.nameAr,
+      neighborhood: site.neighborhood,
+      governorate: site.governorate,
+      status: site.status,
+      partner: site.partner,
+      households: site.households,
+      individuals: site.individuals,
+    }
+  }), [placed])
+
   const plan = useMemo(() => {
     const ids = new Set()
     for (const area of definedAreas) {
@@ -454,11 +484,15 @@ export function AppStateProvider({ children }) {
 
   const stats = useMemo(() => {
     const featured = definedAreas.filter((area) => area.featured)
-    const totals = combinedAreaCounts(featured.map((area) => area.ring), siteDots)
-    const byArea = Object.fromEntries(catalog.areas.map((area) => {
-      const group = featured.filter((item) => item.parent === area.name)
-      const counts = combinedAreaCounts(group.map((item) => item.ring), siteDots)
-      return [area.name, { ...counts, sites: counts.verification + counts.act, radiusKm: 0 }]
+    const totals = combinedAreaCounts(featured.map((area) => area.ring), siteDots, noSmaSites)
+    const parentNames = [...new Set([
+      ...catalog.areas.map((area) => area.name),
+      ...definedAreas.map((area) => area.parent).filter(Boolean),
+    ])]
+    const byArea = Object.fromEntries(parentNames.map((name) => {
+      const group = featured.filter((item) => item.parent === name)
+      const counts = combinedAreaCounts(group.map((item) => item.ring), siteDots, noSmaSites)
+      return [name, { ...counts, sites: counts.verification + counts.act + counts.noSma, radiusKm: 0 }]
     }))
     for (const area of featured) {
       const bucket = byArea[area.parent]
@@ -472,14 +506,15 @@ export function AppStateProvider({ children }) {
       }
     }
     return {
-      sites: totals.verification + totals.act,
+      sites: totals.verification + totals.act + totals.noSma,
       verification: totals.verification,
       act: totals.act,
+      noSma: totals.noSma,
       hhs: totals.hhs,
       individuals: totals.individuals,
       byArea,
     }
-  }, [areaByName, definedAreas, placed, siteDots])
+  }, [areaByName, definedAreas, noSmaSites, placed, siteDots])
 
   const overlaps = useMemo(() => {
     const managedIds = new Set()
@@ -496,13 +531,18 @@ export function AppStateProvider({ children }) {
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const searching = needle.length > 0
-    const activeArea = searching || areaFilter === 'all' ? null : areaByName[areaFilter]
+    const activeArea = searching || areaFilter === 'all' ? null : areaByName[areaFilter] || null
+    const neighborhoodFilter = searching || areaFilter === 'all' || activeArea ? '' : areaFilter
 
     const candidates = siteCatalog.candidates
       .filter((site) => {
         if (!searching && scope === 'plan' && !plan.has(site.id)) return false
         if (activeArea && site.area !== activeArea.name) return false
-        return matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])
+        if (neighborhoodFilter) {
+          const here = placed('candidate', site.id, site.lat, site.lon)
+          if (!pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)) return false
+        }
+        return matchesQuery(needle, [site.name, site.id, site.formerActId, site.neighborhood, site.area, ...partnerSearchParts(site.id), ...partnerSearchParts(site.formerActId)])
       })
       .sort((a, b) => areaOrder.get(a.area) - areaOrder.get(b.area) || a.rank - b.rank)
       .map((site) => ({
@@ -518,6 +558,7 @@ export function AppStateProvider({ children }) {
     const actRows = actSites
       .filter((site) => {
         if (!searching && scope === 'plan' && !plan.has(site.id)) return false
+        if (!actInNeighborhood(site, neighborhoodFilter, placed)) return false
         return actMatches(site, needle, activeArea)
       })
       .map((site) => ({
@@ -529,29 +570,30 @@ export function AppStateProvider({ children }) {
         color: '#3949ab',
       }))
 
-    const managed = siteCatalog.managed
+    const managedExtras = ziteManagedSites.filter((site) => {
+      if (!managedInFocus(site, activeArea, neighborhoodFilter, placed)) return false
+      return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, site.partner])
+    })
+    const managed = [...siteCatalog.managed
       .filter((site) => {
-        if (activeArea) {
-          const named = site.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
-          const here = placed('managed', site.id, site.lat, site.lon)
-          const near = haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
-          if (!named && !near) return false
-        }
+        if (!managedInFocus(site, activeArea, neighborhoodFilter, placed)) return false
         return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, ...partnerSearchParts(site.id)])
-      })
+      }), ...managedExtras]
       .sort((a, b) => a.governorate.localeCompare(b.governorate) || a.name.localeCompare(b.name))
       .map((site) => ({
         type: 'managed',
         id: site.id,
         title: site.name,
-        subtitle: [searching ? 'Managed' : '', site.id, site.place, partnerName(site.id)].filter(Boolean).join(' · '),
+        subtitle: [searching ? 'Managed' : '', site.id, site.place, site.partner || partnerName(site.id)].filter(Boolean).join(' · '),
         meta: site.governorate,
         color: '#0f7b6c',
       }))
 
     const aisha = catalog.aisha
       .filter((site) => {
-        if (activeArea && haversineKm(site.lat, site.lon, activeArea.lat, activeArea.lon) > 6) return false
+        const here = placed('aisha', site.id, site.lat, site.lon)
+        if (neighborhoodFilter && !pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)) return false
+        if (activeArea && haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) > 6) return false
         return matchesQuery(needle, [site.address, site.addressAr, site.governorate, site.donor, site.id, site.focalPoint])
       })
       .map((site) => ({
@@ -565,7 +607,10 @@ export function AppStateProvider({ children }) {
 
     const crcs = catalog.crcs
       .filter((site) => {
-        if (activeArea && site.region !== activeArea.crc) return false
+        if (neighborhoodFilter) {
+          const here = placed('crc', site.id, site.lat, site.lon)
+          if (!pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)) return false
+        } else if (activeArea && site.region !== activeArea.crc) return false
         return matchesQuery(needle, [site.name, site.region])
       })
       .map((site) => ({
@@ -589,7 +634,18 @@ export function AppStateProvider({ children }) {
         color: '#0e7490',
       })) : []
 
-    if (searching) return [...candidates, ...actRows, ...managed, ...partners, ...aisha, ...crcs]
+    const unmanaged = searching ? ziteUnmanagedSites
+      .filter((site) => matchesQuery(needle, [site.name, site.nameAr, site.id, site.governorate, site.neighborhood]))
+      .map((site) => ({
+        type: 'unmanaged',
+        id: site.id,
+        title: site.name || site.id,
+        subtitle: ['Unmanaged', site.id, site.neighborhood].filter(Boolean).join(' · '),
+        meta: site.governorate,
+        color: '#3ca2e6',
+      })) : []
+
+    if (searching) return [...candidates, ...actRows, ...managed, ...partners, ...unmanaged, ...aisha, ...crcs]
     if (scope === 'managed') return managed
     if (scope === 'aisha') return aisha
     if (scope === 'crcs') return crcs
@@ -601,44 +657,74 @@ export function AppStateProvider({ children }) {
   const counts = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const searching = needle.length > 0
-    const activeArea = searching || areaFilter === 'all' ? null : areaByName[areaFilter]
+    const activeArea = searching || areaFilter === 'all' ? null : areaByName[areaFilter] || null
+    const neighborhoodFilter = searching || areaFilter === 'all' || activeArea ? '' : areaFilter
+    const candidateInFocus = (site) => {
+      if (activeArea && site.area !== activeArea.name) return false
+      if (!neighborhoodFilter) return true
+      const here = placed('candidate', site.id, site.lat, site.lon)
+      return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+    }
     return {
-      plan: siteCatalog.candidates.filter((site) => plan.has(site.id) && (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])).length
-        + actSites.filter((site) => plan.has(site.id) && actMatches(site, needle, activeArea)).length,
-      candidates: siteCatalog.candidates.filter((site) => (!activeArea || site.area === activeArea.name) && matchesQuery(needle, [site.name, site.id, site.neighborhood, site.area, ...partnerSearchParts(site.id)])).length,
-      act: actSites.filter((site) => actMatches(site, needle, activeArea)).length,
-      managed: siteCatalog.managed.filter((site) => {
-        if (activeArea) {
-          const named = site.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
-          const here = placed('managed', site.id, site.lat, site.lon)
-          const near = haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
-          if (!named && !near) return false
-        }
-        return matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, ...partnerSearchParts(site.id)])
-      }).length,
+      plan: siteCatalog.candidates.filter((site) => plan.has(site.id) && candidateInFocus(site) && matchesQuery(needle, [site.name, site.id, site.formerActId, site.neighborhood, site.area, ...partnerSearchParts(site.id), ...partnerSearchParts(site.formerActId)])).length
+        + actSites.filter((site) => plan.has(site.id) && actInNeighborhood(site, neighborhoodFilter, placed) && actMatches(site, needle, activeArea)).length,
+      candidates: siteCatalog.candidates.filter((site) => candidateInFocus(site) && matchesQuery(needle, [site.name, site.id, site.formerActId, site.neighborhood, site.area, ...partnerSearchParts(site.id), ...partnerSearchParts(site.formerActId)])).length,
+      act: actSites.filter((site) => actInNeighborhood(site, neighborhoodFilter, placed) && actMatches(site, needle, activeArea)).length,
+      managed: siteCatalog.managed.filter((site) => managedInFocus(site, activeArea, neighborhoodFilter, placed) && matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, ...partnerSearchParts(site.id)])).length
+        + ziteManagedSites.filter((site) => managedInFocus(site, activeArea, neighborhoodFilter, placed) && matchesQuery(needle, [site.name, site.nameAr, site.id, site.place, site.governorate, site.partner])).length,
       aisha: catalog.aisha.filter((site) => {
-        if (activeArea && haversineKm(site.lat, site.lon, activeArea.lat, activeArea.lon) > 6) return false
+        const here = placed('aisha', site.id, site.lat, site.lon)
+        if (neighborhoodFilter && !pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)) return false
+        if (activeArea && haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) > 6) return false
         return matchesQuery(needle, [site.address, site.addressAr, site.governorate, site.donor, site.id, site.focalPoint])
       }).length,
-      crcs: catalog.crcs.filter((site) => (!activeArea || site.region === activeArea.crc) && matchesQuery(needle, [site.name, site.region])).length,
+      crcs: catalog.crcs.filter((site) => {
+        if (neighborhoodFilter) {
+          const here = placed('crc', site.id, site.lat, site.lon)
+          if (!pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)) return false
+        } else if (activeArea && site.region !== activeArea.crc) return false
+        return matchesQuery(needle, [site.name, site.region])
+      }).length,
     }
   }, [areaByName, areaFilter, placed, plan, query])
 
   const draftCounts = useMemo(() => {
     if (!draft || draft.length < 3) return null
-    return countsFor(draft.map(([lat, lon]) => [lon, lat]), siteDots)
-  }, [draft, siteDots])
+    return countsFor(draft.map(([lat, lon]) => [lon, lat]), siteDots, noSmaSites)
+  }, [draft, noSmaSites, siteDots])
 
   const editCounts = useMemo(() => {
     if (!editPoints || editPoints.length < 3) return null
-    return countsFor(editPoints.map(([lat, lon]) => [lon, lat]), siteDots)
-  }, [editPoints, siteDots])
+    return countsFor(editPoints.map(([lat, lon]) => [lon, lat]), siteDots, noSmaSites)
+  }, [editPoints, noSmaSites, siteDots])
 
   const areaCounts = useMemo(() => {
     const counts = {}
-    for (const area of definedAreas) counts[area.id] = countsFor(area.ring, siteDots)
+    for (const area of definedAreas) counts[area.id] = countsFor(area.ring, siteDots, noSmaSites)
     return counts
-  }, [definedAreas, siteDots])
+  }, [definedAreas, noSmaSites, siteDots])
+
+  const areaGroups = useMemo(() => {
+    const groups = catalog.areas.map((area) => ({
+      name: area.name,
+      color: area.color,
+      neighborhood: area.neighborhood,
+      predefined: true,
+    }))
+    const seen = new Set(groups.map((group) => group.name))
+    for (const area of definedAreas) {
+      const name = area.parent
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      groups.push({
+        name,
+        color: colorForAreaGroup(name),
+        neighborhood: name,
+        predefined: false,
+      })
+    }
+    return groups
+  }, [definedAreas])
 
   const startDraw = useCallback((parent) => {
     editingRef.current = null
@@ -727,18 +813,23 @@ export function AppStateProvider({ children }) {
 
   const finishDraw = useCallback(() => {
     const points = draftRef.current
-    if (!points || points.length < 3 || !drawingParent) return
+    if (!points || points.length < 3) return
+    const ring = points.map(([lat, lon]) => [lon, lat])
+    const detected = parentForRing(ring)
+    const predefinedNames = new Set(catalog.areas.map((area) => area.name))
+    let parent = drawingParent || detected || 'Outside'
+    if (drawingParent && predefinedNames.has(drawingParent) && detected && !predefinedNames.has(detected)) parent = detected
     const id = `area-${Date.now()}`
     changeDefinedAreas((current) => {
-      const siblings = current.filter((area) => area.parent === drawingParent)
+      const siblings = current.filter((area) => area.parent === parent)
       return [
         ...current,
         {
           id,
           name: `Area ${siblings.length + 1}`,
           color: AREA_COLORS[current.length % AREA_COLORS.length],
-          parent: drawingParent,
-          ring: points.map(([lat, lon]) => [lon, lat]),
+          parent,
+          ring,
           visible: true,
           featured: !siblings.some((area) => area.featured),
         },
@@ -793,8 +884,8 @@ export function AppStateProvider({ children }) {
   }, [])
 
   const exportApproved = useCallback(() => {
-    downloadAllSitesWorkbook(definedAreas, siteDots)
-  }, [definedAreas, siteDots])
+    downloadAllSitesWorkbook(definedAreas, siteDots, noSmaSites)
+  }, [definedAreas, noSmaSites, siteDots])
 
   const exportBoundaries = useCallback(() => {
     downloadAreaBoundaries(definedAreas)
@@ -803,8 +894,8 @@ export function AppStateProvider({ children }) {
   const exportDefinedArea = useCallback((id) => {
     const area = definedAreas.find((item) => item.id === id)
     if (!area) return
-    downloadAreaWorkbook(area.name.trim() || 'Area', area.ring, siteDots)
-  }, [definedAreas, siteDots])
+    downloadAreaWorkbook(area.name.trim() || 'Area', area.ring, siteDots, noSmaSites, definedAreas)
+  }, [definedAreas, noSmaSites, siteDots])
 
   const exportPlan = useCallback(() => {
     const header = ['Area', 'Site ID', 'Site name', 'Neighborhood', 'Households', 'Individuals', 'Latitude', 'Longitude', 'Distance to CRC (km)', 'Rank', 'Workbook selection']
@@ -843,8 +934,30 @@ export function AppStateProvider({ children }) {
           'ACT site',
         ]
       })
-    downloadCsv('acted-site-selection.csv', [header, ...body, ...actBody])
-  }, [placed, plan])
+    const featured = definedAreas.filter((area) => area.featured)
+    const noSmaBody = noSmaInside(featured.map((area) => area.ring), noSmaSites).map((site) => {
+      const parents = [...new Set(
+        featured
+          .filter((area) => pointInRing(site.lat, site.lon, area.ring))
+          .map((area) => area.parent)
+          .filter(Boolean),
+      )]
+      return [
+        parents.join('; '),
+        site.id,
+        site.name || '',
+        site.neighborhood || '',
+        site.households ?? '',
+        site.individuals ?? '',
+        site.lat,
+        site.lon,
+        '',
+        '',
+        'No SMA',
+      ]
+    })
+    downloadCsv('acted-site-selection.csv', [header, ...body, ...actBody, ...noSmaBody])
+  }, [definedAreas, noSmaSites, placed, plan])
 
   const value = {
     catalog: siteCatalog,
@@ -868,6 +981,7 @@ export function AppStateProvider({ children }) {
     counts,
     overlaps,
     areaByName,
+    areaGroups,
     exportPlan,
     definedAreas,
     siteDots,

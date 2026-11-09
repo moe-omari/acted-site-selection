@@ -1,6 +1,10 @@
 import partnerSites from '../data/partner-sites.json'
+import { zitePartnerSites } from './zite'
 
-const partnerSitesByOthers = partnerSites.filter((site) => String(site.partner || '').trim().toUpperCase() !== 'ACTED')
+const partnerSitesByOthers = [
+  ...partnerSites.filter((site) => String(site.partner || '').trim().toUpperCase() !== 'ACTED'),
+  ...zitePartnerSites,
+]
 
 function normalizeId(id) {
   return String(id ?? '').trim().toUpperCase()

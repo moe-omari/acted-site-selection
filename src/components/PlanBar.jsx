@@ -3,7 +3,7 @@ import { formatCount, formatGap, formatNumber } from '../lib/format'
 import { useAppState } from '../state'
 
 export default function PlanBar() {
-  const { catalog, stats, areaFilter, selectArea, definedAreas, areaCounts, targets, setPlanTarget } = useAppState()
+  const { areaGroups, stats, areaFilter, selectArea, definedAreas, areaCounts, targets, setPlanTarget } = useAppState()
   const householdGap = stats.hhs - targets.households
   const peopleGap = stats.individuals - targets.individuals
 
@@ -12,7 +12,7 @@ export default function PlanBar() {
       <div className={areaFilter === 'all' ? 'plan-card is-on' : 'plan-card'}>
         <button type="button" className="plan-card-body" onClick={() => selectArea('all')}>
           <span className="kicker">Whole plan</span>
-          <SiteCount sites={stats.sites} act={stats.act} />
+          <SiteCount sites={stats.sites} act={stats.act} noSma={stats.noSma} />
           <span className="metrics">
             <em>{formatNumber(stats.hhs)} HH</em>
             <em className={gapClass(householdGap)}>{formatGap(householdGap)} HH</em>
@@ -44,7 +44,7 @@ export default function PlanBar() {
         </span>
       </div>
 
-      {catalog.areas.filter((area) => area.name !== "Al-Shati'").map((area) => {
+      {areaGroups.filter((area) => area.name !== "Al-Shati'").map((area) => {
         const selected = definedAreas.filter((item) => item.parent === area.name && item.featured)
         const featured = selected.length === 1 ? selected[0] : null
         const many = selected.length > 1
@@ -53,7 +53,8 @@ export default function PlanBar() {
         const individuals = totals ? totals.individuals : bucket.individuals
         const hhs = totals ? totals.hhs : bucket.hhs
         const act = totals ? totals.act : bucket.act
-        const sites = (totals ? totals.verification : bucket.verification) + act
+        const noSma = totals ? totals.noSma : bucket.noSma
+        const sites = (totals ? totals.verification : bucket.verification) + act + noSma
         return (
           <div
             key={area.name}
@@ -66,7 +67,7 @@ export default function PlanBar() {
                 {area.neighborhood}
               </span>
               <strong>{featured ? featured.name : many ? `${selected.length} areas` : area.name}</strong>
-              <SiteCount sites={sites} act={act} />
+              <SiteCount sites={sites} act={act} noSma={noSma} />
               <span className="metrics">
                 <em>{formatNumber(individuals)} individuals</em>
               </span>
@@ -81,11 +82,12 @@ export default function PlanBar() {
   )
 }
 
-function SiteCount({ sites, act }) {
+function SiteCount({ sites, act, noSma }) {
   return (
     <span className="site-line">
       <strong>{formatNumber(sites)} sites</strong>
       <span className="site-act">| {formatNumber(act)} ACT</span>
+      <span className="site-act">| {formatNumber(noSma)} No SMA</span>
     </span>
   )
 }

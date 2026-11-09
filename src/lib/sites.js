@@ -29,6 +29,15 @@ function actIdentity(row) {
   return newId || siteId
 }
 
+export function isOfficialSiteId(id) {
+  return /^(?:GZA|KYS|DEB|RFH)\d+$/i.test(String(id ?? '').trim())
+}
+
+function officialActId(row) {
+  const newId = String(row[actColumn['New Site ID']] ?? '').trim()
+  return isOfficialSiteId(newId) ? newId : ''
+}
+
 export function actRecord(codes) {
   const wanted = new Set(codes.map(normalizeId).filter(Boolean))
   if (!wanted.size) return null
@@ -113,6 +122,7 @@ export function actMapPoint(site) {
 
 export function listActSites() {
   return actSheet.rows.flatMap((row) => {
+    if (officialActId(row)) return []
     const id = actIdentity(row)
     if (!id) return []
     const record = { id }
@@ -146,6 +156,38 @@ function populationAmount(value) {
     if (Number.isFinite(number)) return number
   }
   return 0
+}
+
+export function promotedActSites(areas) {
+  return actSheet.rows.flatMap((row) => {
+    const id = officialActId(row)
+    if (!id) return []
+    const record = actRecord([id])
+    const point = record ? actMapPoint(record) : null
+    if (!record || !point) return []
+    const place = String(record.Neighbourhood || '').trim().toLowerCase()
+    const named = (areas || []).find((area) => area.neighborhood.toLowerCase() === place || area.name.toLowerCase() === place)
+    const area = named || nearestArea(areas || [], point.lat, point.lon)
+    const nameAr = String(record['Site name (Arabic)'] || '').trim()
+    return [{
+      id,
+      name: String(record['Site name'] || id).trim() || id,
+      ...(nameAr ? { nameAr } : {}),
+      area: area?.name ?? '',
+      neighborhood: area?.neighborhood || record.Neighbourhood || '',
+      hhs: populationAmount(record.Households),
+      individuals: populationAmount(record.Individuals),
+      lat: point.lat,
+      lon: point.lon,
+      distanceCrcKm: null,
+      distanceAnchorKm: null,
+      rank: 10000,
+      workbookSelected: false,
+      fromAct: true,
+      formerActId: String(record['Site ID'] || '').trim(),
+      status: String(record['Site status'] || '').trim(),
+    }]
+  })
 }
 
 function headerIndex(headers, prefix) {
@@ -284,6 +326,10 @@ function linkedExtentCodes(catalog) {
   const linked = new Set()
   for (const site of verificationCandidates(catalog)) linked.add(normalizeId(site.id))
   for (const site of catalog.managed) linked.add(normalizeId(site.id))
+  for (const site of promotedActSites(catalog.areas)) {
+    linked.add(normalizeId(site.id))
+    linked.add(normalizeId(site.formerActId))
+  }
   for (const site of listActSites()) {
     if (!actMapPoint(site)) continue
     linked.add(normalizeId(site.id))

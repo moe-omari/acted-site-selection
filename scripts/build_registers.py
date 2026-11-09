@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 XLSX = Path(r"d:\new - site verification assessments - act sites - managed sites.xlsx")
 OUT = ROOT / "src" / "data" / "registers.json"
+SKIP_ACT = {"ACT103", "ACT1600"}
 
 
 def json_cell(value):
@@ -57,6 +58,8 @@ def main():
     workbook = load_workbook(XLSX, read_only=True, data_only=True)
     verification_header, verification_rows = sheet_table(workbook, "Sheet1")
     act_header, act_rows = sheet_table(workbook, "ACT sites")
+    act_id = index_of(act_header, "Site ID")
+    act_rows = [row for row in act_rows if str(row[act_id] or "").strip().upper() not in SKIP_ACT]
     payload = {
         "verification": {
             "headers": verification_header,

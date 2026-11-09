@@ -18,8 +18,10 @@ import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
 import neighborhoods from '../data/neighborhoods.json'
 import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
+import { ziteManagedSites, ziteUnmanagedSites } from '../lib/zite'
 import { siteForExtent, actRecord, actMapSites, barePolygonDots, linkedSiteLayer, orphanExtentDots, unlinkedExtents } from '../lib/sites'
 import { useAppState } from '../state'
+import { neighborhoodFrame, pointInNeighborhood } from '../lib/areas'
 import { haversineKm } from '../lib/geo'
 import { formatCount, formatKm, formatNumber } from '../lib/format'
 
@@ -61,8 +63,13 @@ function markerIcon(kind, active) {
   return iconCache.get(key)
 }
 
-function candidateVisible(site, layers, plan, areaFilter) {
-  if (areaFilter !== 'all' && site.area !== areaFilter) return false
+function candidateVisible(site, layers, plan, areaFilter, locate) {
+  if (areaFilter !== 'all') {
+    const here = locate?.(site)
+    if (here?.neighborhood) {
+      if (!pointInNeighborhood(here.lat, here.lon, areaFilter)) return false
+    } else if (site.area !== areaFilter) return false
+  }
   return plan.has(site.id) ? layers.plan : layers.other
 }
 
@@ -341,7 +348,11 @@ export default function MapView() {
     clearMeasure,
   } = useAppState()
 
-  const activeArea = areaFilter === 'all' ? null : areaByName[areaFilter]
+  const activeArea = areaFilter === 'all' ? null : areaByName[areaFilter] || null
+  const neighborhoodFilter = areaFilter !== 'all' && !activeArea ? areaFilter : ''
+  const locateCandidate = neighborhoodFilter
+    ? (site) => ({ ...placed('candidate', site.id, site.lat, site.lon), neighborhood: true })
+    : null
   const focusKey = focus ? `${focus.type}:${focus.id}` : ''
   const unlinkedExtentData = useMemo(() => unlinkedExtents(catalog), [catalog])
   const bareDots = useMemo(() => barePolygonDots(catalog), [catalog])
@@ -358,7 +369,7 @@ export default function MapView() {
   ]), [])
   const hoverKey = hover ? `${hover.type}:${hover.id}` : ''
 
-  const visibleCandidates = catalog.candidates.filter((site) => candidateVisible(site, layers, plan, areaFilter))
+  const visibleCandidates = catalog.candidates.filter((site) => candidateVisible(site, layers, plan, areaFilter, locateCandidate))
   const renderedCandidateIds = new Set(visibleCandidates.map((site) => site.id))
 
   const managedHidden = new Set()
@@ -377,6 +388,9 @@ export default function MapView() {
   if (activeArea) {
     catalog.candidates.filter((site) => site.area === activeArea.name).forEach((site) => fitPoints.push(site))
     fitPoints.push(activeArea)
+  } else if (neighborhoodFilter) {
+    const frame = neighborhoodFrame(neighborhoodFilter)
+    if (frame) fitPoints.push(...frame.points)
   } else {
     catalog.areas.forEach((area) => fitPoints.push(area))
     catalog.candidates.forEach((site) => fitPoints.push(site))
@@ -728,6 +742,25 @@ export default function MapView() {
           />
         ))}
 
+        {layers.managedExtents && ziteUnmanagedSites.map((site) => {
+          const here = placed('unmanaged', site.id, site.lat, site.lon)
+          return (
+            <SiteDot
+              key={`unmanaged-${site.id}`}
+              type="unmanaged"
+              id={site.id}
+              lat={here.lat}
+              lon={here.lon}
+              color="#3ca2e6"
+              filled
+              active={isActive('unmanaged', site.id, focusKey, hoverKey)}
+              title={site.name || site.id}
+              setFocus={setFocus}
+              moveSite={moveSite}
+            />
+          )
+        })}
+
         {layers.partners && partnerSites.filter((site) => !sitesAlreadyOnMap.has(String(site.key).toUpperCase())).map((site) => {
           const here = placed('partner', site.key, site.lat, site.lon)
           return (
@@ -751,8 +784,9 @@ export default function MapView() {
         {layers.managed && catalog.managed
           .filter((site) => !managedHidden.has(site.id))
           .filter((site) => {
-            if (!activeArea) return true
             const here = placed('managed', site.id, site.lat, site.lon)
+            if (neighborhoodFilter) return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+            if (!activeArea) return true
             const named = site.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
             return named || haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
           })
@@ -770,6 +804,33 @@ export default function MapView() {
                 filled
                 active={isActive('managed', site.id, focusKey, hoverKey)}
                 title={partner ? `${site.name} · ${partner}` : site.name}
+                setFocus={setFocus}
+                moveSite={moveSite}
+              />
+            )
+          })}
+
+        {layers.managed && ziteManagedSites
+          .filter((site) => {
+            const here = placed('managed', site.id, site.lat, site.lon)
+            if (neighborhoodFilter) return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+            if (!activeArea) return true
+            const named = site.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
+            return named || haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 3
+          })
+          .map((site) => {
+            const here = placed('managed', site.id, site.lat, site.lon)
+            return (
+              <SiteDot
+                key={`managed-zite-${site.id}`}
+                type="managed"
+                id={site.id}
+                lat={here.lat}
+                lon={here.lon}
+                color="#0f7b6c"
+                filled
+                active={isActive('managed', site.id, focusKey, hoverKey)}
+                title={site.name || site.id}
                 setFocus={setFocus}
                 moveSite={moveSite}
               />
@@ -799,6 +860,10 @@ export default function MapView() {
 
         {layers.act && actMapSites()
           .filter((site) => {
+            if (neighborhoodFilter) {
+              const here = placed('act', site.id, site.lat, site.lon)
+              return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+            }
             if (!activeArea) return true
             const place = site.neighbourhood.trim().toLowerCase()
             return place === activeArea.neighborhood.toLowerCase() || place === activeArea.name.toLowerCase()
@@ -826,16 +891,18 @@ export default function MapView() {
         {bareDots.filter((dot) => {
           if (dot.type === 'candidate') {
             const site = catalog.candidates.find((item) => item.id === dot.id)
-            return Boolean(site && candidateVisible(site, layers, plan, areaFilter))
+            return Boolean(site && candidateVisible(site, layers, plan, areaFilter, locateCandidate))
           }
           if (dot.type === 'managed') {
             if (!layers.managed || managedHidden.has(dot.id)) return false
+            if (neighborhoodFilter) return pointInNeighborhood(dot.lat, dot.lon, neighborhoodFilter)
             if (!activeArea) return true
             const site = catalog.managed.find((item) => item.id === dot.id)
             const named = site?.place && site.place.toLowerCase() === activeArea.neighborhood.toLowerCase()
             return named || haversineKm(dot.lat, dot.lon, activeArea.lat, activeArea.lon) <= 3
           }
           if (!layers.act) return false
+          if (neighborhoodFilter) return pointInNeighborhood(dot.lat, dot.lon, neighborhoodFilter)
           if (!activeArea) return true
           const site = actMapSites().find((item) => item.id === dot.id)
           const place = site?.neighbourhood.trim().toLowerCase() || ''
@@ -864,8 +931,9 @@ export default function MapView() {
 
         {layers.aisha && catalog.aisha
           .filter((site) => {
-            if (!activeArea) return true
             const here = placed('aisha', site.id, site.lat, site.lon)
+            if (neighborhoodFilter) return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+            if (!activeArea) return true
             return haversineKm(here.lat, here.lon, activeArea.lat, activeArea.lon) <= 6
           })
           .map((site) => {
@@ -886,7 +954,13 @@ export default function MapView() {
           })}
 
         {layers.crcs && catalog.crcs
-          .filter((site) => !activeArea || site.region === activeArea.crc)
+          .filter((site) => {
+            if (neighborhoodFilter) {
+              const here = placed('crc', site.id, site.lat, site.lon)
+              return pointInNeighborhood(here.lat, here.lon, neighborhoodFilter)
+            }
+            return !activeArea || site.region === activeArea.crc
+          })
           .map((site) => {
             const here = placed('crc', site.id, site.lat, site.lon)
             return (
@@ -907,14 +981,14 @@ export default function MapView() {
       </MapContainer>
       {draft ? (
         <p className="draw-banner">
-          Click the map to add corners{drawingParent ? ` for ${drawingParent}` : ''}. Double-click to finish.
-          {draftCounts ? ` ${draftCounts.verification} assessments · ${draftCounts.act} ACT sites · ${formatCount(draftCounts.hhs)} HH · ${formatNumber(draftCounts.individuals)} individuals inside.` : ''}
+          Click the map to add corners{drawingParent ? ` for ${drawingParent}` : ''}. Double-click to finish.{drawingParent ? '' : ' The neighborhood is added to the list.'}
+          {draftCounts ? ` ${draftCounts.verification} assessments · ${draftCounts.act} ACT sites · ${draftCounts.noSma} No SMA · ${formatCount(draftCounts.hhs)} HH · ${formatNumber(draftCounts.individuals)} individuals inside.` : ''}
         </p>
       ) : null}
       {editingId ? (
         <p className="draw-banner">
           Drag a corner to move the boundary. Click a midpoint to add a corner. Double-click a corner to remove it.
-          {editCounts ? ` ${editCounts.verification} ${editCounts.verification === 1 ? 'site' : 'sites'} · ${editCounts.act} ACT sites · ${formatCount(editCounts.hhs)} HH · ${formatNumber(editCounts.individuals)} individuals inside.` : ''}
+          {editCounts ? ` ${editCounts.verification} ${editCounts.verification === 1 ? 'site' : 'sites'} · ${editCounts.act} ACT sites · ${editCounts.noSma} No SMA · ${formatCount(editCounts.hhs)} HH · ${formatNumber(editCounts.individuals)} individuals inside.` : ''}
         </p>
       ) : null}
       {measuring && !draft ? (
@@ -1063,6 +1137,7 @@ function resolveFocus(catalog, focus, placed) {
   }
   if (focus.type === 'managed') {
     const site = catalog.managed.find((item) => item.id === focus.id)
+      || ziteManagedSites.find((item) => item.id === focus.id)
     return site ? { ...site, ...placed('managed', site.id, site.lat, site.lon), type: 'managed' } : null
   }
   if (focus.type === 'aisha') {
@@ -1087,6 +1162,11 @@ function resolveFocus(catalog, focus, placed) {
     const lat = ring.reduce((sum, pair) => sum + pair[1], 0) / ring.length
     const lon = ring.reduce((sum, pair) => sum + pair[0], 0) / ring.length
     return { lat, lon, type: 'act' }
+  }
+  if (focus.type === 'unmanaged') {
+    const site = ziteUnmanagedSites.find((item) => item.id === focus.id)
+    if (!site) return null
+    return { ...site, ...placed('unmanaged', site.id, site.lat, site.lon), type: 'unmanaged' }
   }
   return null
 }

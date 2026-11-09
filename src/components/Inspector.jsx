@@ -2,6 +2,7 @@ import blocks from '../data/blocks.json'
 import extents from '../data/extents.json'
 import managedSiteExtents from '../data/managed-extents.json'
 import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partners'
+import { ziteManagedSites, ziteUnmanagedSites } from '../lib/zite'
 import { formatCoord, formatCount, formatKm, formatNumber } from '../lib/format'
 import { haversineKm, nearest, pointInRing } from '../lib/geo'
 import { siteTypology } from '../lib/areas'
@@ -37,17 +38,18 @@ export default function Inspector() {
         <section>
           <h3>Properties</h3>
           <Row label="Site ID">{site.id}</Row>
+          {site.formerActId && site.formerActId.toUpperCase() !== site.id.toUpperCase() ? <Row label="Former ACT code">{site.formerActId}</Row> : null}
           {partnerRow(site.id)}
-          <Row label="Typology">{siteTypology(site.id) || '—'}</Row>
+          <Row label="Typology">{siteTypology(site.id, site.formerActId) || '—'}</Row>
           {site.status ? <Row label="Status">{site.status}</Row> : null}
           <Row label="Households">{formatCount(site.hhs)}</Row>
           <Row label="Individuals">{formatCount(site.individuals)}</Row>
-          {site.fromVerification || site.fromExtent ? null : <Row label="Rank from anchor">{site.rank}</Row>}
+          {site.fromVerification || site.fromExtent || site.fromAct ? null : <Row label="Rank from anchor">{site.rank}</Row>}
           <Row label="Distance to anchor">{formatKm(area ? haversineKm(here.lat, here.lon, area.lat, area.lon) : site.distanceAnchorKm)}</Row>
           <Row label="Distance to CRC">{formatKm(crc ? haversineKm(here.lat, here.lon, crc.lat, crc.lon) : site.distanceCrcKm)}</Row>
           <Row label="Nearest Aisha">{serviceText(closestAisha, (item) => item.point.address)}</Row>
           <Row label="CRC">{crc ? crc.name : area?.crc}</Row>
-          {site.fromVerification || site.fromExtent ? null : <Row label="Workbook">{site.workbookSelected ? 'Selected' : 'Not selected'}</Row>}
+          {site.fromVerification || site.fromExtent || site.fromAct ? null : <Row label="Workbook">{site.workbookSelected ? 'Selected' : 'Not selected'}</Row>}
           <Row label="Coordinates">{formatCoord(located.lat, located.lon)}</Row>
         </section>
         <section>
@@ -62,6 +64,34 @@ export default function Inspector() {
               {area.name} now covers {formatKm(stats.byArea[area.name].radiusKm)} from {area.anchorId}, with {formatNumber(stats.byArea[area.name].individuals)} individuals against a target of {formatNumber(targets.areas[area.name].individuals)}.
             </p>
           ) : null}
+        </section>
+      </aside>
+    )
+  }
+
+  if (focus.type === 'unmanaged') {
+    const site = ziteUnmanagedSites.find((item) => item.id === focus.id)
+    if (!site) return null
+    const here = placed('unmanaged', site.id, site.lat, site.lon)
+    return (
+      <aside className="inspector">
+        <Header eyebrow="Unmanaged site" title={site.name || site.id} onClose={() => setFocus(null)} />
+        {site.nameAr ? <p className="arabic" dir="auto">{site.nameAr}</p> : null}
+        <div className="pills">
+          {site.governorate ? <span className="pill">{site.governorate}</span> : null}
+          {site.neighborhood ? <span className="pill">{site.neighborhood}</span> : null}
+        </div>
+        <section>
+          <h3>Properties</h3>
+          <Row label="Site ID">{site.id}</Row>
+          <Row label="Management">Unmanaged</Row>
+          {site.siteType ? <Row label="Type">{site.siteType}</Row> : null}
+          {site.status ? <Row label="Status">{site.status}</Row> : null}
+          {site.households != null ? <Row label="Households">{formatNumber(site.households)}</Row> : null}
+          {site.individuals != null ? <Row label="Individuals">{formatNumber(site.individuals)}</Row> : null}
+          {site.governorate ? <Row label="Governorate">{site.governorate}</Row> : null}
+          {site.neighborhood ? <Row label="Neighborhood">{site.neighborhood}</Row> : null}
+          <Row label="Coordinates">{formatCoord(here.lat, here.lon)}</Row>
         </section>
       </aside>
     )
@@ -97,6 +127,35 @@ export default function Inspector() {
   }
 
   if (focus.type === 'managed') {
+    const added = catalog.managed.some((item) => item.id === focus.id)
+      ? null
+      : ziteManagedSites.find((item) => item.id === focus.id)
+    if (added) {
+      const here = placed('managed', added.id, added.lat, added.lon)
+      return (
+        <aside className="inspector">
+          <Header eyebrow="Currently managed" title={added.name || added.id} onClose={() => setFocus(null)} />
+          {added.nameAr ? <p className="arabic" dir="auto">{added.nameAr}</p> : null}
+          <div className="pills">
+            <span className="pill green">ACTED</span>
+            {added.governorate ? <span className="pill">{added.governorate}</span> : null}
+            {added.neighborhood ? <span className="pill">{added.neighborhood}</span> : null}
+          </div>
+          <section>
+            <h3>Properties</h3>
+            <Row label="Site ID">{added.id}</Row>
+            <Row label="Partner">ACTED</Row>
+            {added.siteType ? <Row label="Type">{added.siteType}</Row> : null}
+            {added.status ? <Row label="Status">{added.status}</Row> : null}
+            {added.households != null ? <Row label="Households">{formatNumber(added.households)}</Row> : null}
+            {added.individuals != null ? <Row label="Individuals">{formatNumber(added.individuals)}</Row> : null}
+            {added.governorate ? <Row label="Governorate">{added.governorate}</Row> : null}
+            {added.neighborhood ? <Row label="Neighborhood">{added.neighborhood}</Row> : null}
+            <Row label="Coordinates">{formatCoord(here.lat, here.lon)}</Row>
+          </section>
+        </aside>
+      )
+    }
     const site = catalog.managed.find((item) => item.id === focus.id)
     if (!site) return null
     const here = placed('managed', site.id, site.lat, site.lon)
