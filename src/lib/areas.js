@@ -6,6 +6,7 @@ import { listedAsPartner } from './partners'
 import { downloadJson, pointInRing, ringCentroid } from './geo'
 import { listedAsManaged } from './managed-layer'
 import { extentCenter, isOfficialSiteId, promotedActSites, verificationCandidates, verificationPopulation } from './sites'
+import { ziteManagedSites } from './zite'
 
 function normalizeId(id) {
   if (id == null) return ''
@@ -310,6 +311,28 @@ function rowsInside(rows, idIndexes, rings, dots) {
   })
 }
 
+export const areaExceptionIds = new Set(['KYS5817'])
+
+function exceptionPoint(site, dots) {
+  const points = dots?.get(normalizeId(site.id))
+  if (points?.length) return points[0]
+  const lat = Number(site.lat)
+  const lon = Number(site.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  return { lat, lon }
+}
+
+export function areaExceptionsInside(rings, dots) {
+  const shapes = (rings || []).filter((ring) => Array.isArray(ring) && ring.length >= 3)
+  if (!shapes.length) return []
+  return ziteManagedSites.flatMap((site) => {
+    if (!areaExceptionIds.has(normalizeId(site.id))) return []
+    const point = exceptionPoint(site, dots)
+    if (!point || !shapes.some((ring) => pointInRing(point.lat, point.lon, ring))) return []
+    return [{ ...site, lat: point.lat, lon: point.lon }]
+  })
+}
+
 export function noSmaInside(rings, sites) {
   const shapes = (rings || []).filter((ring) => Array.isArray(ring) && ring.length >= 3)
   if (!shapes.length || !sites) return []
@@ -369,12 +392,19 @@ export function combinedAreaCounts(rings, dots, noSmaSites) {
     noSmaHouseholds += amount(site.households)
     noSmaIndividuals += amount(site.individuals)
   }
+  const exceptions = areaExceptionsInside(shapes, dots).filter((site) => !alreadyCounted.has(normalizeId(site.id)))
+  let exceptionHouseholds = 0
+  let exceptionIndividuals = 0
+  for (const site of exceptions) {
+    exceptionHouseholds += amount(site.households)
+    exceptionIndividuals += amount(site.individuals)
+  }
   return {
-    verification: verification.length + promoted.length,
+    verification: verification.length + promoted.length + exceptions.length,
     act: act.length,
     noSma: noSma.length,
-    hhs: population.hhs + noSmaHouseholds,
-    individuals: population.individuals + noSmaIndividuals,
+    hhs: population.hhs + noSmaHouseholds + exceptionHouseholds,
+    individuals: population.individuals + noSmaIndividuals + exceptionIndividuals,
   }
 }
 
@@ -469,6 +499,7 @@ function noSmaSheetRows(sites, definedAreas) {
 export function downloadAreaWorkbook(name, areaRing, dots, noSmaSites, definedAreas) {
   const contents = areaContents(areaRing, dots)
   const counts = combinedAreaCounts([areaRing], dots, noSmaSites)
+  const exceptions = areaExceptionsInside([areaRing], dots)
   const verification = registers.verification
   const act = registers.act
   const verificationRows = contents.verification.map((row) => {
@@ -490,6 +521,20 @@ export function downloadAreaWorkbook(name, areaRing, dots, noSmaSites, definedAr
       ['No SMA', counts.noSma],
       ['Households', counts.hhs],
       ['Individuals', counts.individuals],
+      ...(exceptions.length ? [
+        [],
+        ['Included managed site', 'Site name', 'Site name (Arabic)', 'Partner', 'Households', 'Individuals', 'Latitude', 'Longitude'],
+        ...exceptions.map((site) => [
+          site.id,
+          site.name || '',
+          site.nameAr || '',
+          site.partner || '',
+          populationCell(site.households),
+          populationCell(site.individuals),
+          site.lat,
+          site.lon,
+        ]),
+      ] : []),
     ]),
     'Area',
   )

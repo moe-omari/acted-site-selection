@@ -5,12 +5,12 @@ import { partnerFor, partnerSitesByOthers as partnerSites } from '../lib/partner
 import { ziteManagedSites, ziteUnmanagedSites } from '../lib/zite'
 import { formatCoord, formatCount, formatKm, formatNumber } from '../lib/format'
 import { haversineKm, nearest, pointInRing } from '../lib/geo'
-import { siteTypology } from '../lib/areas'
+import { areaExceptionsInside, siteTypology } from '../lib/areas'
 import { actRecord, actMapPoint, focusForExtent } from '../lib/sites'
 import { useAppState } from '../state'
 
 export default function Inspector() {
-  const { focus: selected, setFocus, catalog, plan, overlaps, areaByName, stats, placed, targets } = useAppState()
+  const { focus: selected, setFocus, catalog, plan, overlaps, areaByName, stats, placed, targets, definedAreas, siteDots } = useAppState()
   const focus = focusForExtent(selected, catalog)
   if (!focus) return null
 
@@ -140,6 +140,9 @@ export default function Inspector() {
             <span className="pill green">ACTED</span>
             {added.governorate ? <span className="pill">{added.governorate}</span> : null}
             {added.neighborhood ? <span className="pill">{added.neighborhood}</span> : null}
+            {areaExceptionsInside(definedAreas.filter((area) => area.featured).map((area) => area.ring), siteDots).some((site) => site.id === added.id)
+              ? <span className="pill">In selected area</span>
+              : null}
           </div>
           <section>
             <h3>Properties</h3>

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import catalog from './data/catalog.json'
 import { listedAsPartner, partnerFor, partnerSearchParts, partnerSitesByOthers as partnerSites } from './lib/partners'
-import { colorForAreaGroup, combinedAreaCounts, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook, isKnownAreaParent, noSmaInside, parentForRing, pointInNeighborhood } from './lib/areas'
+import { areaExceptionIds, areaExceptionsInside, colorForAreaGroup, combinedAreaCounts, dotInside, downloadAllSitesWorkbook, downloadAreaBoundaries, downloadAreaWorkbook, isKnownAreaParent, noSmaInside, parentForRing, pointInNeighborhood } from './lib/areas'
 import { downloadCsv, haversineKm, pointInRing } from './lib/geo'
 import { listActSites, actMapPoint, barePolygonDots, extentCenter, polygonSites, promotedActSites, verificationCandidates } from './lib/sites'
 import { listedAsManaged, managedLayerSites } from './lib/managed-layer'
@@ -444,6 +444,10 @@ export function AppStateProvider({ children }) {
     }
     for (const dot of barePolygonDots(siteCatalog)) {
       addSiteDot(dots, dot.id, placed(dot.type, dot.key, dot.lat, dot.lon))
+    }
+    for (const site of ziteManagedSites) {
+      if (!areaExceptionIds.has(normalizeId(site.id))) continue
+      addSiteDot(dots, site.id, placed('managed', site.id, site.lat, site.lon))
     }
     return dots
   }, [placed])
@@ -935,6 +939,27 @@ export function AppStateProvider({ children }) {
         ]
       })
     const featured = definedAreas.filter((area) => area.featured)
+    const exceptionBody = areaExceptionsInside(featured.map((area) => area.ring), siteDots).map((site) => {
+      const parents = [...new Set(
+        featured
+          .filter((area) => pointInRing(site.lat, site.lon, area.ring))
+          .map((area) => area.parent)
+          .filter(Boolean),
+      )]
+      return [
+        parents.join('; '),
+        site.id,
+        site.name || '',
+        site.neighborhood || '',
+        site.households ?? '',
+        site.individuals ?? '',
+        site.lat,
+        site.lon,
+        '',
+        '',
+        'Managed',
+      ]
+    })
     const noSmaBody = noSmaInside(featured.map((area) => area.ring), noSmaSites).map((site) => {
       const parents = [...new Set(
         featured
@@ -956,8 +981,8 @@ export function AppStateProvider({ children }) {
         'No SMA',
       ]
     })
-    downloadCsv('acted-site-selection.csv', [header, ...body, ...actBody, ...noSmaBody])
-  }, [definedAreas, noSmaSites, placed, plan])
+    downloadCsv('acted-site-selection.csv', [header, ...body, ...actBody, ...exceptionBody, ...noSmaBody])
+  }, [definedAreas, noSmaSites, placed, plan, siteDots])
 
   const value = {
     catalog: siteCatalog,
